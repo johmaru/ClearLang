@@ -1,0 +1,2 @@
+CompileFlags:
+  Add: [-fexceptions, -frtti]

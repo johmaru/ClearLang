@@ -1,0 +1,1 @@
+Project tree snapshot (2025-08-26): directories and files captured from repo root, including build and build-ninja outputs, grammar, src, cmake, tools, and Serena memories. Use to quickly recall structure without re-scanning.

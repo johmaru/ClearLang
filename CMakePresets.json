@@ -1,0 +1,37 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "msvc-ninja-release",
+      "displayName": "MSVC + Ninja (Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-ninja",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/ninja_no_platform_toolchain.cmake",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/generators",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_GENERATOR_TOOLSET": ""
+      },
+      "environment": {
+        "Platform": null,
+        "VSCMD_ARG_TGT_ARCH": null,
+        "PreferredToolArchitecture": null,
+        "CMAKE_GENERATOR_PLATFORM": null,
+        "CMAKE_GENERATOR_TOOLSET": ""
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "msvc-ninja-release",
+      "configurePreset": "msvc-ninja-release"
+    }
+  ]
+}

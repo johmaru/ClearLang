@@ -1,0 +1,1 @@
+ANTLR4 label naming gotcha: Do not use a label name identical to any rule name in the same grammar (shared namespace). In ClearLanguage.g4, unaryExpr used label `expr=unaryExpr`, which conflicted with rule `expr`. Fix by renaming the label, e.g., `inner=unaryExpr` or `operand=unaryExpr`. Update visitors accordingly (e.g., visitUnaryMinus uses ctx->inner). Date: 2025-08-26.

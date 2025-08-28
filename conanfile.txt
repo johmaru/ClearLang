@@ -1,0 +1,14 @@
+[requires]
+antlr4-cppruntime/4.13.2
+llvm-core/19.1.7
+
+[options]
+llvm-core/*:components=core;codegen;analysis;target;support;mc
+llvm-core/*:with_zlib=False
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[layout]
+cmake_layout

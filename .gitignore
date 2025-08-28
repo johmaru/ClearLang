@@ -1,0 +1,5 @@
+.cache*
+build/
+build-ninja/
+grammar/.antlr/
+compile_commands.json

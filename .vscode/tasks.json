@@ -1,0 +1,19 @@
+{
+  // VS Code tasks to update Serena snapshots manually
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Update Serena snapshots",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/scripts/update_serena_snapshot.ps1"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
