@@ -1,4 +1,5 @@
 #include <iostream>
+#include <optional>
 #include <string>
 #include <stdexcept>
 #include <cstdint>
@@ -17,9 +18,12 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
     std::vector<std::unordered_map<std::string, Value>> varScopes;
     std::vector<std::unordered_map<std::string, Type>>  typeScopes;
 
+    std::optional<Type> expectedType;
+
     static const char* typeName(const Type& t) {
         switch (t.Kind) {
             case Type::U8: return "u8";
+            case Type::I8: return "i8";
             case Type::I32: return "i32";
             case Type::I64: return "i64";
         }
@@ -106,6 +110,7 @@ public:
     EvalVisitor() {
         pushScopes();
         typeScopes.back().emplace("u8", Type{Type::U8});
+        typeScopes.back().emplace("i8", Type{Type::I8});
         typeScopes.back().emplace("i32", Type{Type::I32});
         typeScopes.back().emplace("int", Type{Type::I32});
         typeScopes.back().emplace("i64", Type{Type::I64});
@@ -138,7 +143,14 @@ public:
 
         for (auto* s : ctx->stmt()) {
             auto res = visit(s);
-            if (res.type() == typeid(int64_t)) {
+
+            if (res.type() == typeid(Value)) {
+                const Value v = std::any_cast<Value>(res);
+                last = static_cast<int64_t>(v.v);
+                hasExpr = true;
+            }
+
+            else if (res.type() == typeid(int64_t)) {
                 last = std::any_cast<int64_t>(res);
                 hasExpr = true;
             }
@@ -154,7 +166,13 @@ public:
 
         int64_t v = 0;
         if (vd->expr()) {
+
+            auto oldExpectedType = expectedType;
+
+            expectedType = t;
+
             auto anyInit = visit(vd->expr());
+            expectedType = oldExpectedType;
             const Value init = std::any_cast<Value>(anyInit);
 
             Value finalVal;
@@ -234,8 +252,13 @@ public:
     }
 
     std::any visitUnaryMinus(ClearLanguageParser::UnaryMinusContext* ctx) override {
+
         Value inner = std::any_cast<Value>(visit(ctx->inner));
-        if (inner.isUntypedInt) inner = Value{Type{Type::I32}, -inner.v, false};
+
+        if (inner.isUntypedInt) {
+            inner.v = -inner.v;
+            return inner;
+        }
         
         if (inner.type.Kind == Type::U8) {
             // Now unsupported UnaryMinus for U8
@@ -252,6 +275,13 @@ public:
 
     std::any visitIntLiteral(ClearLanguageParser::IntLiteralContext* ctx) override {
         int64_t v = static_cast<int64_t>(std::stoll(ctx->INT()->getText()));
+
+        if (expectedType.has_value()) {
+            Value val{expectedType.value(), v, false};
+            checkRange(val.type, val.v);
+            return val;
+        }
+
         return Value{Type{Type::I32}, v, true};
     }
 

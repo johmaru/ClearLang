@@ -1,4 +1,4 @@
-Files of interest snapshot (2025-08-31)
+Files of interest snapshot (2025-08-30)
 
 Key files:
 - CMakeLists.txt
@@ -66,13 +66,6 @@ Executables:
 - build\build\generators\zstd-release-x86_64-data.cmake
 - build\build\generators\zstd-Target-release.cmake
 - build\build\generators\zstdTargets.cmake
-- build\Clear.dir\Debug\Clear.tlog\CL.command.1.tlog
-- build\Clear.dir\Debug\Clear.tlog\Clear.lastbuildstate
-- build\Clear.dir\Debug\Clear.tlog\CustomBuild.command.1.tlog
-- build\Clear.dir\Debug\Clear.tlog\CustomBuild.read.1.tlog
-- build\Clear.dir\Debug\Clear.tlog\CustomBuild.write.1.tlog
-- build\Clear.dir\Debug\Clear.tlog\unsuccessfulbuild
-- build\Clear.dir\Debug\vc143.pdb
 - build\Clear.dir\Release\Clear.exe.recipe
 - build\Clear.dir\Release\Clear.tlog\CL.command.1.tlog
 - build\Clear.dir\Release\Clear.tlog\Cl.items.tlog
@@ -309,16 +302,6 @@ Executables:
 - build\Release\omp_gen.vcxproj.filters
 - build\Release\ZERO_CHECK.vcxproj
 - build\Release\ZERO_CHECK.vcxproj.filters
-- build\x64\Debug\generate_parser\generate_parser.recipe
-- build\x64\Debug\generate_parser\generate_parser.tlog\CustomBuild.command.1.tlog
-- build\x64\Debug\generate_parser\generate_parser.tlog\CustomBuild.read.1.tlog
-- build\x64\Debug\generate_parser\generate_parser.tlog\CustomBuild.write.1.tlog
-- build\x64\Debug\generate_parser\generate_parser.tlog\generate_parser.lastbuildstate
-- build\x64\Debug\ZERO_CHECK\ZERO_CHECK.recipe
-- build\x64\Debug\ZERO_CHECK\ZERO_CHECK.tlog\CustomBuild.command.1.tlog
-- build\x64\Debug\ZERO_CHECK\ZERO_CHECK.tlog\CustomBuild.read.1.tlog
-- build\x64\Debug\ZERO_CHECK\ZERO_CHECK.tlog\CustomBuild.write.1.tlog
-- build\x64\Debug\ZERO_CHECK\ZERO_CHECK.tlog\ZERO_CHECK.lastbuildstate
 - build\x64\Release\copy_compile_commands\copy_com.1153AD9E.tlog\copy_compile_commands.lastbuildstate
 - build\x64\Release\copy_compile_commands\copy_com.1153AD9E.tlog\CustomBuild.command.1.tlog
 - build\x64\Release\copy_compile_commands\copy_com.1153AD9E.tlog\CustomBuild.read.1.tlog
@@ -348,7 +331,7 @@ Executables:
 - build-ninja\.cmake\api\v1\reply\cmakeFiles-v1-41c611558cd909b53ed2.json
 - build-ninja\.cmake\api\v1\reply\codemodel-v2-fd2821bd00485c20605a.json
 - build-ninja\.cmake\api\v1\reply\directory-.-Release-d0094a50bb2071803777.json
-- build-ninja\.cmake\api\v1\reply\index-2025-08-31T09-27-18-0258.json
+- build-ninja\.cmake\api\v1\reply\index-2025-08-30T06-15-47-0834.json
 - build-ninja\.cmake\api\v1\reply\target-acc_gen-Release-dcd16968341c1afba464.json
 - build-ninja\.cmake\api\v1\reply\target-Clear-Release-d0d4ac16cce1bd8cb36f.json
 - build-ninja\.cmake\api\v1\reply\target-copy_compile_commands-Release-1ca54770cf56475b6e06.json

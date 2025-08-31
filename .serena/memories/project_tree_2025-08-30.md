@@ -1,4 +1,4 @@
-Project tree snapshot (2025-08-31)
+Project tree snapshot (2025-08-30)
 
 Top-level directories:
 - .cache
@@ -10,7 +10,6 @@ Top-level directories:
 - cmake
 - grammar
 - scripts
-- sema_readme
 - src
 - tools
 
