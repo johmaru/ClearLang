@@ -33,6 +33,7 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
             case Type::U32: return "u32";
             case Type::I64: return "i64";
             case Type::U64: return "u64";
+            case Type::NORETURN: return "noreturn";
         }
         return "?";
     }
@@ -254,6 +255,7 @@ public:
         typeScopes.back().emplace("u32", Type{Type::U32});
         typeScopes.back().emplace("i64", Type{Type::I64});
         typeScopes.back().emplace("u64", Type{Type::U64});
+        typeScopes.back().emplace("noreturn", Type{Type::NORETURN});
 
         // End initialization type scopes
     }
@@ -280,6 +282,10 @@ public:
 
         try {
             visit(entry->block());
+            // For functions declared as noreturn, reaching the end without a return is valid.
+            if (retType.Kind == Type::NORETURN) {
+                return std::any{}; // no value
+            }
             throw std::runtime_error("function did not return a value");
         } catch (const ReturnSignal& rs) {
             return static_cast<std::any>(rs.value.v);
@@ -289,6 +295,10 @@ public:
     std::any visitStmtReturn(ClearLanguageParser::StmtReturnContext* ctx) override {
         if (!currentFuncReturnType.has_value()) {
             throw std::runtime_error("internal: function return type not set");
+        }
+
+        if (currentFuncReturnType->Kind == Type::NORETURN) {
+            throw std::runtime_error("noreturn function cannot return");
         }
 
         if (!ctx->expr()) {
@@ -335,6 +345,11 @@ public:
         auto* vd = ctx->varDecl();
         const std::string name = vd->IDENT()->getText();
         Type t = resolveType(vd->type()->getText());
+
+        // Currently, our language compiler doesn't have a function call variable, so until implement the function call variable, noreturn type is not allowed.
+        if (t.Kind == Type::NORETURN) {
+            throw std::runtime_error("variable cannot have type 'noreturn'");
+        }
 
         int64_t v = 0;
         if (vd->expr()) {

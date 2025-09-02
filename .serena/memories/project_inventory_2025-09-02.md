@@ -307,6 +307,7 @@ Executables:
 - build\Release\intrinsics_gen.vcxproj.filters
 - build\Release\omp_gen.vcxproj
 - build\Release\omp_gen.vcxproj.filters
+- build\Release\src\main.clr
 - build\Release\ZERO_CHECK.vcxproj
 - build\Release\ZERO_CHECK.vcxproj.filters
 - build\x64\Debug\generate_parser\generate_parser.recipe
@@ -348,7 +349,7 @@ Executables:
 - build-ninja\.cmake\api\v1\reply\cmakeFiles-v1-41c611558cd909b53ed2.json
 - build-ninja\.cmake\api\v1\reply\codemodel-v2-fd2821bd00485c20605a.json
 - build-ninja\.cmake\api\v1\reply\directory-.-Release-d0094a50bb2071803777.json
-- build-ninja\.cmake\api\v1\reply\index-2025-09-02T08-46-08-0872.json
+- build-ninja\.cmake\api\v1\reply\index-2025-09-02T13-43-38-0704.json
 - build-ninja\.cmake\api\v1\reply\target-acc_gen-Release-dcd16968341c1afba464.json
 - build-ninja\.cmake\api\v1\reply\target-Clear-Release-d0d4ac16cce1bd8cb36f.json
 - build-ninja\.cmake\api\v1\reply\target-copy_compile_commands-Release-1ca54770cf56475b6e06.json

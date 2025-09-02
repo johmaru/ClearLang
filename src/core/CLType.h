@@ -6,7 +6,7 @@
 #include <string>
 
 struct Type {
-    enum Kind { I8, U8, I32, U32, I64, U64 } Kind;
+    enum Kind { I8, U8, I32, U32, I64, U64, NORETURN } Kind;
     bool isUnsigned() const {
         return Kind == U8 || Kind == U32 || Kind == U64;
     }
@@ -50,6 +50,7 @@ struct Type {
         if (s == "u32") return {U32};
         if (s == "i64") return {I64};
         if (s == "u64") return {U64};
+        if (s == "noreturn") return {NORETURN};
         throw std::runtime_error("unknown type: " + s);
     }
 };
