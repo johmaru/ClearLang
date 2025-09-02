@@ -25,9 +25,10 @@ int main(int argc, const char* argv[]) {
         auto* tree = parser.start();
 
         EvalVisitor eval;
-        auto anyResult = eval.visit(tree);
-        auto result = std::any_cast<int64_t>(anyResult);
-        std::cout << result << std::endl;
+    auto anyResult = eval.visit(tree);
+    // EvalVisitor::visitStart returns std::any holding std::variant<int64_t,uint64_t>
+    auto ret = std::any_cast<std::variant<int64_t, uint64_t>>(anyResult);
+    std::visit([](auto x){ std::cout << x << std::endl; }, ret);
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "error: " << ex.what() << std::endl;

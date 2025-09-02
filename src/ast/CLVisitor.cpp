@@ -1,9 +1,11 @@
+#include <any>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <stdexcept>
 #include <cstdint>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 #include "antlr4-runtime.h"
 #include "ClearLanguageLexer.h"
@@ -20,23 +22,57 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
 
     std::optional<Type> expectedType;
 
+    struct ReturnSignal {bool hasValue = false; Value value;};
+    std::optional<Type> currentFuncReturnType;
+
     static const char* typeName(const Type& t) {
         switch (t.Kind) {
-            case Type::U8: return "u8";
             case Type::I8: return "i8";
+            case Type::U8: return "u8";
             case Type::I32: return "i32";
+            case Type::U32: return "u32";
             case Type::I64: return "i64";
+            case Type::U64: return "u64";
         }
         return "?";
     }
 
-    static void checkRange(const Type& t, int64_t v) {
-        if (v < t.min() || v > t.max())
-            throw std::runtime_error("initializer out of range");
+    static std::string boundsString(const Type& t) {
+        if (t.isUnsigned()) {
+            auto [mn, mx] = t.unsignedBounds();
+            return "[" + std::to_string(mn) + ".." + std::to_string(mx) + "]";
+        } else {
+            auto [mn, mx] = t.signedBounds();
+            return "[" + std::to_string(mn) + ".." + std::to_string(mx) + "]";
+        }
+    }
+
+    static void checkRange(const Type& t, const std::variant<int64_t,uint64_t>& v) {
+        if (!t.fits(v)) {
+            std::string msg = "initializer out of range: ";
+            if (std::holds_alternative<int64_t>(v))
+                msg += std::to_string(std::get<int64_t>(v));
+            else
+                msg += std::to_string(std::get<uint64_t>(v));
+            msg += " allowed range: ";
+            msg += boundsString(t);
+            msg += " for type ";
+            msg += typeName(t);
+            throw std::runtime_error(msg);
+        }
     }
 
     static Value coerceUntypedTo(const Value& val, const Type& targetType) {
-        Value r{targetType, val.v, false};
+        Value r{targetType, {}, false};
+        if (isUnsigned(targetType)) {
+            uint64_t u = std::holds_alternative<uint64_t>(val.v) ? std::get<uint64_t>(val.v)
+                            : static_cast<uint64_t>(std::get<int64_t>(val.v));
+            r.v = u;
+        } else {
+            int64_t s = std::holds_alternative<int64_t>(val.v) ? std::get<int64_t>(val.v)
+                            : static_cast<int64_t>(std::get<uint64_t>(val.v));
+            r.v = s;
+        }
         checkRange(targetType, r.v);
         return r;
     }
@@ -62,10 +98,111 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
             throw std::runtime_error(msg);
         }
 
-        int64_t res = op(lhs.v, rhs.v);
+        normalizeValueStorage(lhs);
+        normalizeValueStorage(rhs);
 
-        checkRange(lhs.type, res);
-        return Value{lhs.type, res, false};
+        if (isUnsigned(lhs.type)) {
+            uint64_t a = std::visit([](auto x){ return static_cast<uint64_t>(x); }, lhs.v);
+            uint64_t b = std::visit([](auto x){ return static_cast<uint64_t>(x); }, rhs.v);
+            uint64_t r = 0;
+            if (opSym == "+") {
+                if (b > std::numeric_limits<uint64_t>::max() - a) {
+                    std::string m = std::string("initializer out of range: unsigned addition overflow; allowed range: ")
+                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                    throw std::runtime_error(m);
+                }
+                r = a + b;
+            } else if (opSym == "-") {
+                if (a < b) {
+                    std::string m = std::string("initializer out of range: unsigned subtraction underflow; allowed range: ")
+                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                    throw std::runtime_error(m);
+                }
+                r = a - b;
+            } else if (opSym == "*") {
+                if (a != 0 && b > std::numeric_limits<uint64_t>::max() / a) {
+                    std::string m = std::string("initializer out of range: unsigned multiplication overflow; allowed range: ")
+                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                    throw std::runtime_error(m);
+                }
+                r = a * b;
+            } else if (opSym == "/") {
+                // division by zero is checked earlier; here just do the op
+                r = a / b;
+            } else {
+                r = op(a, b);
+            }
+            std::variant<int64_t,uint64_t> res = r;
+            checkRange(lhs.type, res);
+            return Value{lhs.type, res, false};
+        } else {
+            int64_t a = std::visit([](auto x){ return static_cast<int64_t>(x); }, lhs.v);
+            int64_t b = std::visit([](auto x){ return static_cast<int64_t>(x); }, rhs.v);
+            int64_t r = 0;
+            if (opSym == "+") {
+                if ((b > 0 && a > (std::numeric_limits<int64_t>::max)() - b) ||
+                    (b < 0 && a < (std::numeric_limits<int64_t>::min)() - b)) {
+                    std::string m = std::string("initializer out of range: signed addition overflow; allowed range: ")
+                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                    throw std::runtime_error(m);
+                }
+                r = a + b;
+            } else if (opSym == "-") {
+                if ((b < 0 && a > (std::numeric_limits<int64_t>::max)() + b) ||
+                    (b > 0 && a < (std::numeric_limits<int64_t>::min)() + b)) {
+                    std::string m = std::string("initializer out of range: signed subtraction overflow; allowed range: ")
+                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                    throw std::runtime_error(m);
+                }
+                r = a - b;
+            } else if (opSym == "*") {
+                if (a != 0 && b != 0) {
+                    if (a > 0) {
+                        if (b > 0) {
+                            if (a > (std::numeric_limits<int64_t>::max)() / b) {
+                                std::string m = std::string("initializer out of range: signed multiplication overflow; allowed range: ")
+                                                + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                                throw std::runtime_error(m);
+                            }
+                        } else { // b < 0
+                            if (b < (std::numeric_limits<int64_t>::min)() / a) {
+                                std::string m = std::string("initializer out of range: signed multiplication overflow; allowed range: ")
+                                                + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                                throw std::runtime_error(m);
+                            }
+                        }
+                    } else { // a < 0
+                        if (b > 0) {
+                            if (a < (std::numeric_limits<int64_t>::min)() / b) {
+                                std::string m = std::string("initializer out of range: signed multiplication overflow; allowed range: ")
+                                                + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                                throw std::runtime_error(m);
+                            }
+                        } else { // b < 0
+                            if (a < (std::numeric_limits<int64_t>::max)() / b) {
+                                std::string m = std::string("initializer out of range: signed multiplication overflow; allowed range: ")
+                                                + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                                throw std::runtime_error(m);
+                            }
+                        }
+                    }
+                }
+                r = a * b;
+            } else if (opSym == "/") {
+                // division by zero checked earlier; handle INT64_MIN / -1 overflow
+                if (a == (std::numeric_limits<int64_t>::min)() && b == -1) {
+                    std::string m = std::string("initializer out of range: signed division overflow; allowed range: ")
+                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
+                    throw std::runtime_error(m);
+                }
+                r = a / b;
+            } else {
+                r = op(a, b);
+            }
+            std::variant<int64_t,uint64_t> res = r;
+            checkRange(lhs.type, res);
+            return Value{lhs.type, res, false};
+        }
     }
 
     void pushScopes() {
@@ -108,12 +245,17 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
 
 public:
     EvalVisitor() {
+        // Initialize type scopes
         pushScopes();
-        typeScopes.back().emplace("u8", Type{Type::U8});
         typeScopes.back().emplace("i8", Type{Type::I8});
+        typeScopes.back().emplace("u8", Type{Type::U8});
         typeScopes.back().emplace("i32", Type{Type::I32});
         typeScopes.back().emplace("int", Type{Type::I32});
+        typeScopes.back().emplace("u32", Type{Type::U32});
         typeScopes.back().emplace("i64", Type{Type::I64});
+        typeScopes.back().emplace("u64", Type{Type::U64});
+
+        // End initialization type scopes
     }
     std::any visitStart(ClearLanguageParser::StartContext* ctx) override {
         ClearLanguageParser::FuncDeclContext* entry = nullptr;
@@ -133,30 +275,60 @@ public:
             }
         }
         if (!entry) throw std::runtime_error("No entry point found");
-        return visit(entry->block());
+        Type retType = resolveType(entry->type()->getText());
+        currentFuncReturnType = retType;
+
+        try {
+            visit(entry->block());
+            throw std::runtime_error("function did not return a value");
+        } catch (const ReturnSignal& rs) {
+            return static_cast<std::any>(rs.value.v);
+        }
+    }
+
+    std::any visitStmtReturn(ClearLanguageParser::StmtReturnContext* ctx) override {
+        if (!currentFuncReturnType.has_value()) {
+            throw std::runtime_error("internal: function return type not set");
+        }
+
+        if (!ctx->expr()) {
+            // Now didn't accept void return
+            throw std::runtime_error("return value required");
+        }
+
+        auto oldExpected = expectedType;
+        expectedType = currentFuncReturnType;
+        Value v = std::any_cast<Value>(visit(ctx->expr()));
+        expectedType = oldExpected;
+
+        Value out = v;
+        if (v.isUntypedInt) {
+            out = coerceUntypedTo(v, *currentFuncReturnType);
+        } else if (v.type.Kind != currentFuncReturnType->Kind) {
+            std::string msg = "return type mismatch: expected ";
+            msg += typeName(*currentFuncReturnType);
+            msg += ", got ";
+            msg += typeName(v.type);
+            throw std::runtime_error(msg);
+        } else {
+            checkRange(*currentFuncReturnType, v.v);
+        }
+
+        throw ReturnSignal{true, out};
     }
 
     std::any visitBlock(ClearLanguageParser::BlockContext* ctx) override {
         pushScopes();
-        int64_t last = 0;
-        bool hasExpr = false;
-
-        for (auto* s : ctx->stmt()) {
-            auto res = visit(s);
-
-            if (res.type() == typeid(Value)) {
-                const Value v = std::any_cast<Value>(res);
-                last = static_cast<int64_t>(v.v);
-                hasExpr = true;
+        try {
+            for (auto* s : ctx->stmt()) {
+                visit(s);
             }
-
-            else if (res.type() == typeid(int64_t)) {
-                last = std::any_cast<int64_t>(res);
-                hasExpr = true;
-            }
+            popScopes();
+            return nullptr;
+        } catch (...) {
+            popScopes();
+            throw;
         }
-        popScopes();
-        return hasExpr ? last : static_cast<int64_t>(0);
     }
 
     std::any visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext* ctx) override {
@@ -191,9 +363,12 @@ public:
                 checkRange(t, init.v);
                 finalVal = init;
             }
+            normalizeValueStorage(finalVal);
             defineVar(name, finalVal);
         } else {
-            defineVar(name, Value{t, 0,false}); // default initialization
+            // unsigned type 0u、signed type 0
+            defineVar(name, isUnsigned(t) ? Value{t, uint64_t{0}, false}
+                                          : Value{t, int64_t{0},  false});
         }
         
         return nullptr;
@@ -208,7 +383,8 @@ public:
     }
 
     std::any visitStmtExpr(ClearLanguageParser::StmtExprContext* ctx) override {
-        return visit(ctx->expr());
+        visit(ctx->expr());
+        return nullptr;
     }
 
     std::any visitAddExpr(ClearLanguageParser::AddExprContext* ctx) override {
@@ -222,9 +398,9 @@ public:
                 const std::string op = tn->getSymbol()->getText(); // "+" or "-"
                 Value rhs = std::any_cast<Value>(visit(ctx->mulExpr(nextMulIndex++)));
                 if (op == "+"){
-                    value = binOp(value, rhs, "+", [](int64_t a, int64_t b) { return a + b; });
+                    value = binOp(value, rhs, "+", [](auto a, auto b) { return a + b; });
                 } else if (op == "-") {
-                    value = binOp(value, rhs, "-", [](int64_t a, int64_t b) { return a - b; });
+                    value = binOp(value, rhs, "-", [](auto a, auto b) { return a - b; });
                 }
             }
         }
@@ -241,10 +417,11 @@ public:
             if (auto* tn = dynamic_cast<antlr4::tree::TerminalNode*>(child)) {
                 const std::string op = tn->getSymbol()->getText(); // "*" or "/"
                 Value rhs = std::any_cast<Value>(visit(ctx->unaryExpr(nextUnaryIndex++)));
-                if (op == "*") value = binOp(value, rhs, "*", [](int64_t a, int64_t b) { return a * b; });
+                if (op == "*") value = binOp(value, rhs, "*", [](auto a, auto b) { return a * b; });
                 else if (op == "/") {
-                    if (rhs.v == 0) throw std::runtime_error("division by zero");
-                    value = binOp(value, rhs, "/", [](int64_t a, int64_t b) { return a / b; });
+                    bool isZero = std::visit([](auto x){ return x == 0; }, rhs.v);
+                    if (isZero) throw std::runtime_error("division by zero");
+                    value = binOp(value, rhs, "/", [](auto a, auto b) { return a / b; });
                 }
             }
         }
@@ -256,7 +433,8 @@ public:
         Value inner = std::any_cast<Value>(visit(ctx->inner));
 
         if (inner.isUntypedInt) {
-            inner.v = -inner.v;
+            int64_t s = std::visit([](auto x){ return -static_cast<int64_t>(x); }, inner.v);
+            inner.v = s;
             return inner;
         }
         
@@ -264,28 +442,57 @@ public:
             // Now unsupported UnaryMinus for U8
             throw std::runtime_error("type mismatch: cannot negate unsigned type");
         }
-        int64_t res = -inner.v;
-        checkRange(inner.type, res);
-        return Value{inner.type, res, false};
+        int64_t a = std::visit([](auto x){ return static_cast<int64_t>(x); }, inner.v);
+        int64_t res = -a;
+        std::variant<int64_t,uint64_t> vr = res;
+        checkRange(inner.type, vr);
+        return Value{inner.type, vr, false};
     }
 
     std::any visitUnaryPrimary(ClearLanguageParser::UnaryPrimaryContext* ctx) override {
         return visitChildren(ctx);
     }
 
-    std::any visitIntLiteral(ClearLanguageParser::IntLiteralContext* ctx) override {
-        int64_t v = static_cast<int64_t>(std::stoll(ctx->INT()->getText()));
-
+   std::any visitIntLiteral(ClearLanguageParser::IntLiteralContext* ctx) override {
+        const std::string txt = ctx->INT()->getText();
         if (expectedType.has_value()) {
-            Value val{expectedType.value(), v, false};
-            checkRange(val.type, val.v);
-            return val;
+            if (isUnsigned(*expectedType)) {
+                uint64_t uv = static_cast<uint64_t>(std::stoull(txt));
+                Value val{*expectedType, uv, false};
+                checkRange(val.type, val.v);
+                return val;
+            } else {
+                // parse as unsigned first to avoid std::stoll overflow, then check/cast
+                uint64_t uv = static_cast<uint64_t>(std::stoull(txt));
+                if (uv > static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())) {
+                    std::string msg = std::string("initializer out of range: ") + txt + "; allowed range: " + boundsString(*expectedType) + " for type " + typeName(*expectedType);
+                    throw std::runtime_error(msg);
+                }
+                int64_t sv = static_cast<int64_t>(uv);
+                Value val{*expectedType, sv, false};
+                checkRange(val.type, val.v);
+                return val;
+            }
         }
-
+        int64_t v = static_cast<int64_t>(std::stoll(txt));
         return Value{Type{Type::I32}, v, true};
     }
 
     std::any visitParenExpr(ClearLanguageParser::ParenExprContext* ctx) override {
         return visit(ctx->expr());
+    }
+
+    static bool isUnsigned(const Type& t){
+        return t.Kind == Type::U8 || t.Kind == Type::U32 || t.Kind == Type::U64;
+    }
+
+    static void normalizeValueStorage(Value& val){
+        if (isUnsigned(val.type)) {
+            if (std::holds_alternative<int64_t>(val.v))
+                val.v = static_cast<uint64_t>(std::get<int64_t>(val.v));
+        } else {
+            if (std::holds_alternative<uint64_t>(val.v))
+                val.v = static_cast<int64_t>(std::get<uint64_t>(val.v));
+        }
     }
 };

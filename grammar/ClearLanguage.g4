@@ -28,15 +28,11 @@ attributes
     ;
 
 funcDecl
-    : attributes* FUNC IDENT '(' paramList? ')' returnType? block
+    : attributes* FUNC IDENT '(' paramList? ')' ARROW type block
     ;
 
 paramList
     : IDENT (',' IDENT)*
-    ;
-
-returnType
-    : ARROW type
     ;
 
 type
@@ -48,7 +44,8 @@ block
     ;
 
 stmt
-    : varDecl          #stmtVarDecl
+    : RETURN expr? SEMI  #stmtReturn
+    | varDecl          #stmtVarDecl
     | expr SEMI        #stmtExpr
     ;
 
@@ -61,6 +58,7 @@ ARROW: '->';
 SEMI: ';';
 COLON: ':';
 ASSIGN: '=';
+RETURN: 'return';
 IDENT: [a-zA-Z_][a-zA-Z0-9_]*;
 
 INT: [0-9]+;
