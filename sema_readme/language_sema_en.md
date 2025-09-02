@@ -8,6 +8,7 @@
 - i32 | signed 32bit integer
 - u64 | signed 64bit integer
 - i64 | signed 64bit integer
+- noreturn | not return value
 
 Example
 
