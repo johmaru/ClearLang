@@ -21,6 +21,7 @@ primary
     : INT                        #intLiteral
     | IDENT                      #varRef
     | '(' expr ')'               #parenExpr
+    | '(' ')'                    #unitLiteral
     ;
 
 attributes

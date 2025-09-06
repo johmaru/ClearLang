@@ -6,7 +6,7 @@
 #include <string>
 
 struct Type {
-    enum Kind { I8, U8, I32, U32, I64, U64, NORETURN } Kind;
+    enum Kind { I8, U8, I32, U32, I64, U64, NORETURN, UNIT } Kind;
     bool isUnsigned() const {
         return Kind == U8 || Kind == U32 || Kind == U64;
     }
@@ -51,12 +51,23 @@ struct Type {
         if (s == "i64") return {I64};
         if (s == "u64") return {U64};
         if (s == "noreturn") return {NORETURN};
+        if (s == "unit" || s == "()") return {UNIT};
         throw std::runtime_error("unknown type: " + s);
     }
 };
 
 struct Value {
     Type type;
-    std::variant<int64_t, uint64_t> v;
+    std::variant<int64_t, uint64_t, std::monostate> v;
     bool isUntypedInt = false;
 };
+
+inline bool isNumeric(const Value& val) {
+    return !std::holds_alternative<std::monostate>(val.v);
+}
+
+inline std::variant<int64_t,uint64_t> asNum2(const Value& v) {
+    if (std::holds_alternative<int64_t>(v.v)) return std::variant<int64_t,uint64_t>(std::get<int64_t>(v.v));
+    if (std::holds_alternative<uint64_t>(v.v)) return std::variant<int64_t,uint64_t>(std::get<uint64_t>(v.v));
+    throw std::runtime_error("unit value cannot be used as a number");
+}

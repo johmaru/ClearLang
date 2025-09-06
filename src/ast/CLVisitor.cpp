@@ -34,6 +34,7 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
             case Type::I64: return "i64";
             case Type::U64: return "u64";
             case Type::NORETURN: return "noreturn";
+            case Type::UNIT: return "unit";
         }
         return "?";
     }
@@ -63,7 +64,25 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
         }
     }
 
+    static void checkRangeValue(const Type& t, const Value& v) {
+        if (v.type.Kind == Type::UNIT) {
+            throw std::runtime_error("unit value cannot be used in expressions");
+        }
+        auto nv = asNum2(v);
+        if (!t.fits(nv)) {
+            std::string msg = "initializer out of range: ";
+            if (std::holds_alternative<int64_t>(nv)) msg += std::to_string(std::get<int64_t>(nv));
+            else msg += std::to_string(std::get<uint64_t>(nv));
+            msg += " for type ";
+            msg += typeName(t);
+            throw std::runtime_error(msg);
+        }
+    }
+
     static Value coerceUntypedTo(const Value& val, const Type& targetType) {
+
+        if (targetType.Kind == Type::UNIT || targetType.Kind == Type::NORETURN) throw std::runtime_error("cannot coerce integer to this type");
+
         Value r{targetType, {}, false};
         if (isUnsigned(targetType)) {
             uint64_t u = std::holds_alternative<uint64_t>(val.v) ? std::get<uint64_t>(val.v)
@@ -74,19 +93,27 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
                             : static_cast<int64_t>(std::get<uint64_t>(val.v));
             r.v = s;
         }
-        checkRange(targetType, r.v);
+        checkRangeValue(r.type, r);
         return r;
     }
 
     template <typename Op>
     static Value binOp(Value lhs, Value rhs, const std::string& opSym, Op op) {
+
+        if (lhs.type.Kind == Type::NORETURN || rhs.type.Kind == Type::NORETURN) {
+            throw std::runtime_error("noreturn value cannot be used in expressions");
+        }
+
+        if (lhs.type.Kind == Type::UNIT || rhs.type.Kind == Type::UNIT) {
+            throw std::runtime_error("unit value cannot be used in expressions");
+        }
     
         if (lhs.isUntypedInt && !rhs.isUntypedInt) lhs = coerceUntypedTo(lhs, rhs.type);
         if (rhs.isUntypedInt && !lhs.isUntypedInt) rhs = coerceUntypedTo(rhs, lhs.type);
 
         if (lhs.isUntypedInt && rhs.isUntypedInt) {
-            lhs = Value{Type{Type::I32}, lhs.v, false};
-            rhs = Value{Type{Type::I32}, rhs.v, false};
+            lhs = Value{Type{Type::I32}, std::get<int64_t>(asNum2(lhs)), false};
+            rhs = Value{Type{Type::I32}, std::get<int64_t>(asNum2(rhs)), false};
         }
 
         if (lhs.type.Kind != rhs.type.Kind) {
@@ -103,106 +130,31 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
         normalizeValueStorage(rhs);
 
         if (isUnsigned(lhs.type)) {
-            uint64_t a = std::visit([](auto x){ return static_cast<uint64_t>(x); }, lhs.v);
-            uint64_t b = std::visit([](auto x){ return static_cast<uint64_t>(x); }, rhs.v);
+            uint64_t a = std::holds_alternative<uint64_t>(lhs.v) ? std::get<uint64_t>(lhs.v) : static_cast<uint64_t>(std::get<int64_t>(lhs.v));
+            uint64_t b = std::holds_alternative<uint64_t>(rhs.v) ? std::get<uint64_t>(rhs.v) : static_cast<uint64_t>(std::get<int64_t>(rhs.v));
+            
             uint64_t r = 0;
-            if (opSym == "+") {
-                if (b > std::numeric_limits<uint64_t>::max() - a) {
-                    std::string m = std::string("initializer out of range: unsigned addition overflow; allowed range: ")
-                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                    throw std::runtime_error(m);
-                }
-                r = a + b;
-            } else if (opSym == "-") {
-                if (a < b) {
-                    std::string m = std::string("initializer out of range: unsigned subtraction underflow; allowed range: ")
-                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                    throw std::runtime_error(m);
-                }
-                r = a - b;
-            } else if (opSym == "*") {
-                if (a != 0 && b > std::numeric_limits<uint64_t>::max() / a) {
-                    std::string m = std::string("initializer out of range: unsigned multiplication overflow; allowed range: ")
-                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                    throw std::runtime_error(m);
-                }
-                r = a * b;
-            } else if (opSym == "/") {
-                // division by zero is checked earlier; here just do the op
-                r = a / b;
-            } else {
-                r = op(a, b);
-            }
-            std::variant<int64_t,uint64_t> res = r;
-            checkRange(lhs.type, res);
-            return Value{lhs.type, res, false};
+            if (opSym == "+") r = a + b;
+            else if (opSym == "-") r = a - b;
+            else if (opSym == "*") r = a * b;
+            else if (opSym == "/") r = a / b;
+            else r = op(a, b);
+
+            checkRange(lhs.type, std::variant<int64_t,uint64_t>{r});
+            return Value{lhs.type, uint64_t{r}, false};
         } else {
-            int64_t a = std::visit([](auto x){ return static_cast<int64_t>(x); }, lhs.v);
-            int64_t b = std::visit([](auto x){ return static_cast<int64_t>(x); }, rhs.v);
+            int64_t a = std::holds_alternative<int64_t>(lhs.v) ? std::get<int64_t>(lhs.v) : static_cast<int64_t>(std::get<uint64_t>(lhs.v));
+            int64_t b = std::holds_alternative<int64_t>(rhs.v) ? std::get<int64_t>(rhs.v) : static_cast<int64_t>(std::get<uint64_t>(rhs.v));
+
             int64_t r = 0;
-            if (opSym == "+") {
-                if ((b > 0 && a > (std::numeric_limits<int64_t>::max)() - b) ||
-                    (b < 0 && a < (std::numeric_limits<int64_t>::min)() - b)) {
-                    std::string m = std::string("initializer out of range: signed addition overflow; allowed range: ")
-                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                    throw std::runtime_error(m);
-                }
-                r = a + b;
-            } else if (opSym == "-") {
-                if ((b < 0 && a > (std::numeric_limits<int64_t>::max)() + b) ||
-                    (b > 0 && a < (std::numeric_limits<int64_t>::min)() + b)) {
-                    std::string m = std::string("initializer out of range: signed subtraction overflow; allowed range: ")
-                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                    throw std::runtime_error(m);
-                }
-                r = a - b;
-            } else if (opSym == "*") {
-                if (a != 0 && b != 0) {
-                    if (a > 0) {
-                        if (b > 0) {
-                            if (a > (std::numeric_limits<int64_t>::max)() / b) {
-                                std::string m = std::string("initializer out of range: signed multiplication overflow; allowed range: ")
-                                                + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                                throw std::runtime_error(m);
-                            }
-                        } else { // b < 0
-                            if (b < (std::numeric_limits<int64_t>::min)() / a) {
-                                std::string m = std::string("initializer out of range: signed multiplication overflow; allowed range: ")
-                                                + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                                throw std::runtime_error(m);
-                            }
-                        }
-                    } else { // a < 0
-                        if (b > 0) {
-                            if (a < (std::numeric_limits<int64_t>::min)() / b) {
-                                std::string m = std::string("initializer out of range: signed multiplication overflow; allowed range: ")
-                                                + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                                throw std::runtime_error(m);
-                            }
-                        } else { // b < 0
-                            if (a < (std::numeric_limits<int64_t>::max)() / b) {
-                                std::string m = std::string("initializer out of range: signed multiplication overflow; allowed range: ")
-                                                + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                                throw std::runtime_error(m);
-                            }
-                        }
-                    }
-                }
-                r = a * b;
-            } else if (opSym == "/") {
-                // division by zero checked earlier; handle INT64_MIN / -1 overflow
-                if (a == (std::numeric_limits<int64_t>::min)() && b == -1) {
-                    std::string m = std::string("initializer out of range: signed division overflow; allowed range: ")
-                                    + boundsString(lhs.type) + " for type " + typeName(lhs.type);
-                    throw std::runtime_error(m);
-                }
-                r = a / b;
-            } else {
-                r = op(a, b);
-            }
-            std::variant<int64_t,uint64_t> res = r;
-            checkRange(lhs.type, res);
-            return Value{lhs.type, res, false};
+            if (opSym == "+") r = a + b;
+            else if (opSym == "-") r = a - b;
+            else if (opSym == "*") r = a * b;
+            else if (opSym == "/") r = a / b;
+            else r = op(a, b);
+
+            checkRange(lhs.type, std::variant<int64_t,uint64_t>{r});
+            return Value{lhs.type, int64_t{r}, false};
         }
     }
 
@@ -256,6 +208,7 @@ public:
         typeScopes.back().emplace("i64", Type{Type::I64});
         typeScopes.back().emplace("u64", Type{Type::U64});
         typeScopes.back().emplace("noreturn", Type{Type::NORETURN});
+        typeScopes.back().emplace("unit", Type{Type::UNIT});
 
         // End initialization type scopes
     }
@@ -283,13 +236,20 @@ public:
         try {
             visit(entry->block());
             // For functions declared as noreturn, reaching the end without a return is valid.
-            if (retType.Kind == Type::NORETURN) {
+            if (retType.Kind == Type::NORETURN || retType.Kind == Type::UNIT) {
                 return std::any{}; // no value
             }
             throw std::runtime_error("function did not return a value");
         } catch (const ReturnSignal& rs) {
-            return static_cast<std::any>(rs.value.v);
+            if (retType.Kind == Type::NORETURN || retType.Kind == Type::UNIT) {
+                return std::any{};
+            }
+            return static_cast<std::any>(asNum2(rs.value));
         }
+    }
+
+    std::any visitUnitLiteral(ClearLanguageParser::UnitLiteralContext* ctx) override {
+        return Value{Type{Type::UNIT}, std::monostate{}, false};
     }
 
     std::any visitStmtReturn(ClearLanguageParser::StmtReturnContext* ctx) override {
@@ -301,6 +261,21 @@ public:
             throw std::runtime_error("noreturn function cannot return");
         }
 
+        if (currentFuncReturnType->Kind == Type::UNIT) {
+            if (!ctx->expr()) {
+                throw ReturnSignal{false, {Type{Type::UNIT}, std::monostate{}, false}};
+            }
+            auto oldExpected = expectedType;
+            expectedType = currentFuncReturnType;
+            Value v = std::any_cast<Value>(visit(ctx->expr()));
+            expectedType = oldExpected;
+
+            if (v.type.Kind != Type::UNIT) {
+                throw std::runtime_error(std::string("return type mismatch: expected unit, got ") + typeName(v.type));
+            }
+            throw ReturnSignal{false, v};
+        }
+
         if (!ctx->expr()) {
             // Now didn't accept void return
             throw std::runtime_error("return value required");
@@ -309,6 +284,14 @@ public:
         auto oldExpected = expectedType;
         expectedType = currentFuncReturnType;
         Value v = std::any_cast<Value>(visit(ctx->expr()));
+
+        if (v.type.Kind == Type::NORETURN) {
+            throw std::runtime_error("noreturn value cannot be returned");
+        }
+        if (v.type.Kind == Type::UNIT) {
+            throw std::runtime_error("unit value cannot be returned");
+        }
+
         expectedType = oldExpected;
 
         Value out = v;
@@ -321,7 +304,7 @@ public:
             msg += typeName(v.type);
             throw std::runtime_error(msg);
         } else {
-            checkRange(*currentFuncReturnType, v.v);
+            checkRangeValue(*currentFuncReturnType, v);
         }
 
         throw ReturnSignal{true, out};
@@ -351,6 +334,10 @@ public:
             throw std::runtime_error("variable cannot have type 'noreturn'");
         }
 
+        if (t.Kind == Type::UNIT) {
+            throw std::runtime_error("variable cannot have type 'unit'");
+        }
+
         int64_t v = 0;
         if (vd->expr()) {
 
@@ -375,7 +362,7 @@ public:
                     msg += typeName(init.type);
                     throw std::runtime_error(msg);
                 }
-                checkRange(t, init.v);
+                checkRangeValue(t, init);
                 finalVal = init;
             }
             normalizeValueStorage(finalVal);
@@ -434,7 +421,9 @@ public:
                 Value rhs = std::any_cast<Value>(visit(ctx->unaryExpr(nextUnaryIndex++)));
                 if (op == "*") value = binOp(value, rhs, "*", [](auto a, auto b) { return a * b; });
                 else if (op == "/") {
-                    bool isZero = std::visit([](auto x){ return x == 0; }, rhs.v);
+                    bool isZero = (std::holds_alternative<int64_t>(rhs.v)
+                                  ? (std::get<int64_t>(rhs.v) == 0)
+                                  : (std::get<uint64_t>(rhs.v) == 0));
                     if (isZero) throw std::runtime_error("division by zero");
                     value = binOp(value, rhs, "/", [](auto a, auto b) { return a / b; });
                 }
@@ -447,21 +436,29 @@ public:
 
         Value inner = std::any_cast<Value>(visit(ctx->inner));
 
+        if (inner.type.Kind == Type::NORETURN) {
+            throw std::runtime_error("noreturn value cannot be used in expressions");
+        }
+
+        if (inner.type.Kind == Type::UNIT) {
+            throw std::runtime_error("unit value cannot be used in expressions");
+        }
+
         if (inner.isUntypedInt) {
-            int64_t s = std::visit([](auto x){ return -static_cast<int64_t>(x); }, inner.v);
-            inner.v = s;
-            return inner;
+            int64_t s = -(std::holds_alternative<int64_t>(inner.v)
+                         ? std::get<int64_t>(inner.v)
+                         : static_cast<int64_t>(std::get<uint64_t>(inner.v)));
+            return Value{Type{Type::I32}, int64_t{s}, false};
         }
         
         if (inner.type.Kind == Type::U8) {
             // Now unsupported UnaryMinus for U8
             throw std::runtime_error("type mismatch: cannot negate unsigned type");
         }
-        int64_t a = std::visit([](auto x){ return static_cast<int64_t>(x); }, inner.v);
+        int64_t a = std::holds_alternative<int64_t>(inner.v) ? std::get<int64_t>(inner.v) : static_cast<int64_t>(std::get<uint64_t>(inner.v));
         int64_t res = -a;
-        std::variant<int64_t,uint64_t> vr = res;
-        checkRange(inner.type, vr);
-        return Value{inner.type, vr, false};
+        checkRange(inner.type, std::variant<int64_t, uint64_t>{res});
+        return Value{inner.type, int64_t{res}, false};
     }
 
     std::any visitUnaryPrimary(ClearLanguageParser::UnaryPrimaryContext* ctx) override {
@@ -470,11 +467,14 @@ public:
 
    std::any visitIntLiteral(ClearLanguageParser::IntLiteralContext* ctx) override {
         const std::string txt = ctx->INT()->getText();
+
+        if (expectedType && expectedType->Kind == Type::UNIT) { int64_t v = stoll(txt); return Value{Type{Type::I32}, v, true}; }
+
         if (expectedType.has_value()) {
             if (isUnsigned(*expectedType)) {
                 uint64_t uv = static_cast<uint64_t>(std::stoull(txt));
                 Value val{*expectedType, uv, false};
-                checkRange(val.type, val.v);
+                checkRangeValue(val.type, val);
                 return val;
             } else {
                 // parse as unsigned first to avoid std::stoll overflow, then check/cast
@@ -485,7 +485,7 @@ public:
                 }
                 int64_t sv = static_cast<int64_t>(uv);
                 Value val{*expectedType, sv, false};
-                checkRange(val.type, val.v);
+                checkRangeValue(val.type, val);
                 return val;
             }
         }
