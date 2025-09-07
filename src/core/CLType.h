@@ -4,6 +4,9 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <memory>
+#include <vector>
+#include <sstream>
 
 struct Type {
     enum Kind { I8, U8, I32, U32, I64, U64, NORETURN, UNIT } Kind;
@@ -56,18 +59,98 @@ struct Type {
     }
 };
 
+struct FunctionSig;
+
+struct TypeRef {
+    enum class Tag { BUILTIN, FUNCTION } tag = Tag::BUILTIN;
+
+    Type builtin{Type::I32}; // default
+
+    std::shared_ptr<FunctionSig> funcSig;
+
+    static TypeRef builtinType(Type t) {
+        TypeRef tr;
+        tr.tag = Tag::BUILTIN;
+        tr.builtin = t;
+        tr.funcSig.reset();
+        return tr;
+    }
+    
+    static TypeRef functionType(std::shared_ptr<FunctionSig> sig) {
+        TypeRef tr;
+        tr.tag = Tag::FUNCTION;
+        tr.funcSig = std::move(sig);
+        return tr;
+    }
+
+    static bool isUnsigned(const TypeRef& t) {
+        return t.isBuiltin() && t.builtin.isUnsigned();
+    }
+
+    bool isBuiltin() const { return tag == Tag::BUILTIN; }
+    bool isFunction() const { return tag == Tag::FUNCTION; }
+};
+
+struct FunctionSig {
+    std::vector<TypeRef> paramTypes;
+    std::shared_ptr<TypeRef> returnType;
+};
+
+struct FunctionValue {
+    std::string name;
+    std::vector<std::string> paramNames;
+    std::shared_ptr<FunctionSig> sig;
+};
+
 struct Value {
-    Type type;
-    std::variant<int64_t, uint64_t, std::monostate> v;
+    TypeRef type;
+    std::variant<int64_t, uint64_t, std::monostate, FunctionValue> v;
     bool isUntypedInt = false;
 };
 
 inline bool isNumeric(const Value& val) {
-    return !std::holds_alternative<std::monostate>(val.v);
+    return std::holds_alternative<int64_t>(val.v) || std::holds_alternative<uint64_t>(val.v);
 }
 
 inline std::variant<int64_t,uint64_t> asNum2(const Value& v) {
     if (std::holds_alternative<int64_t>(v.v)) return std::variant<int64_t,uint64_t>(std::get<int64_t>(v.v));
     if (std::holds_alternative<uint64_t>(v.v)) return std::variant<int64_t,uint64_t>(std::get<uint64_t>(v.v));
-    throw std::runtime_error("unit value cannot be used as a number");
+    throw std::runtime_error("non-numeric value cannot be used as a number");
+}
+
+inline const char* builtinTypeName(const Type& t) {
+    switch (t.Kind) {
+        case Type::I8: return "i8";
+        case Type::U8: return "u8";
+        case Type::I32: return "i32";
+        case Type::U32: return "u32";
+        case Type::I64: return "i64";
+        case Type::U64: return "u64";
+        case Type::NORETURN: return "noreturn";
+        case Type::UNIT: return "unit";
+    }
+    return "?";
+}
+
+inline std::string typeName(const TypeRef& t) {
+    if (t.isBuiltin()) return builtinTypeName(t.builtin);
+    // Function型の表示 "(T1, T2) -> R"
+    std::ostringstream oss;
+    oss << "(";
+    for (size_t i = 0; i < t.funcSig->paramTypes.size(); ++i) {
+        if (i) oss << ", ";
+        oss << typeName(t.funcSig->paramTypes[i]);
+    }
+    oss << ") -> " << typeName(*t.funcSig->returnType);
+    return oss.str();
+}
+
+inline bool isUnsigned(const TypeRef& t) {
+    return t.isBuiltin() && t.builtin.isUnsigned();
+}
+
+inline bool fits(const TypeRef& t, const std::variant<int64_t,uint64_t>& v) {
+    if (!t.isBuiltin())
+        throw std::runtime_error("numeric property requested on non-numeric type: " + typeName(t));
+    return t.builtin.fits(v);
 }

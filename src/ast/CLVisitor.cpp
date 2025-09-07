@@ -1,10 +1,10 @@
 #include <any>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <stdexcept>
 #include <cstdint>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 #include "antlr4-runtime.h"
@@ -17,46 +17,40 @@ using namespace antlr4;
 
 class EvalVisitor : public ClearLanguageBaseVisitor {
 
-    std::vector<std::unordered_map<std::string, Value>> varScopes;
-    std::vector<std::unordered_map<std::string, Type>>  typeScopes;
+    struct FunctionDef {FunctionValue fv; ClearLanguageParser::BlockContext* body = nullptr;};
 
-    std::optional<Type> expectedType;
+    std::vector<std::unordered_map<std::string, Value>> varScopes;
+    std::vector<std::unordered_map<std::string, TypeRef>>  typeScopes;
+
+    std::optional<TypeRef> expectedType;
 
     struct ReturnSignal {bool hasValue = false; Value value;};
-    std::optional<Type> currentFuncReturnType;
+    std::optional<TypeRef> currentFuncReturnType;
 
-    static const char* typeName(const Type& t) {
-        switch (t.Kind) {
-            case Type::I8: return "i8";
-            case Type::U8: return "u8";
-            case Type::I32: return "i32";
-            case Type::U32: return "u32";
-            case Type::I64: return "i64";
-            case Type::U64: return "u64";
-            case Type::NORETURN: return "noreturn";
-            case Type::UNIT: return "unit";
-        }
-        return "?";
+    std::unordered_map<std::string, FunctionDef> functionTable;
+
+    static bool isUnit(const TypeRef& t) {
+        return t.isBuiltin() && t.builtin.Kind == Type::UNIT;
+    }
+    static bool isNoReturn(const TypeRef& t) {
+        return t.isBuiltin() && t.builtin.Kind == Type::NORETURN;
     }
 
-    static std::string boundsString(const Type& t) {
-        if (t.isUnsigned()) {
-            auto [mn, mx] = t.unsignedBounds();
+    static std::string boundsString(const TypeRef& t) {
+        if (!t.isBuiltin()) return "(non-builtin)";
+        if (t.builtin.isUnsigned()) {
+            auto [mn, mx] = t.builtin.unsignedBounds();
             return "[" + std::to_string(mn) + ".." + std::to_string(mx) + "]";
         } else {
-            auto [mn, mx] = t.signedBounds();
+            auto [mn, mx] = t.builtin.signedBounds();
             return "[" + std::to_string(mn) + ".." + std::to_string(mx) + "]";
         }
     }
 
-    static void checkRange(const Type& t, const std::variant<int64_t,uint64_t>& v) {
-        if (!t.fits(v)) {
-            std::string msg = "initializer out of range: ";
-            if (std::holds_alternative<int64_t>(v))
-                msg += std::to_string(std::get<int64_t>(v));
-            else
-                msg += std::to_string(std::get<uint64_t>(v));
-            msg += " allowed range: ";
+    static void checkRange(const TypeRef& t, const std::variant<int64_t,uint64_t>& v) {
+        if (!t.isBuiltin()) throw std::runtime_error("numeric range checked on non-builtin: " + typeName(t));
+        if (!fits(t, v)) {
+            std::string msg = "initializer out of range; allowed range: ";
             msg += boundsString(t);
             msg += " for type ";
             msg += typeName(t);
@@ -64,33 +58,30 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
         }
     }
 
-    static void checkRangeValue(const Type& t, const Value& v) {
-        if (v.type.Kind == Type::UNIT) {
-            throw std::runtime_error("unit value cannot be used in expressions");
-        }
+    static void checkRangeValue(const TypeRef& t, const Value& v) {
+        if (isUnit(v.type)) throw std::runtime_error("unit value cannot be used in expressions");
         auto nv = asNum2(v);
-        if (!t.fits(nv)) {
-            std::string msg = "initializer out of range: ";
-            if (std::holds_alternative<int64_t>(nv)) msg += std::to_string(std::get<int64_t>(nv));
-            else msg += std::to_string(std::get<uint64_t>(nv));
-            msg += " for type ";
-            msg += typeName(t);
-            throw std::runtime_error(msg);
-        }
+        checkRange(t, nv);
     }
 
-    static Value coerceUntypedTo(const Value& val, const Type& targetType) {
+    static Value coerceUntypedTo(const Value& val, const TypeRef& targetType) {
+        if (!targetType.isBuiltin()) {
+            throw std::runtime_error("cannot coerce to non-builtin type: " + typeName(targetType));
+        }
+        if (isUnit(targetType) || isNoReturn(targetType)) {
+            throw std::runtime_error("cannot coerce integer to this type");
+        }
 
-        if (targetType.Kind == Type::UNIT || targetType.Kind == Type::NORETURN) throw std::runtime_error("cannot coerce integer to this type");
-
-        Value r{targetType, {}, false};
-        if (isUnsigned(targetType)) {
-            uint64_t u = std::holds_alternative<uint64_t>(val.v) ? std::get<uint64_t>(val.v)
-                            : static_cast<uint64_t>(std::get<int64_t>(val.v));
+        Value r{targetType, std::monostate{}, false};
+        if (targetType.builtin.isUnsigned()) {
+            uint64_t u = std::holds_alternative<uint64_t>(val.v)
+                    ? std::get<uint64_t>(val.v)
+                    : static_cast<uint64_t>(std::get<int64_t>(val.v));
             r.v = u;
         } else {
-            int64_t s = std::holds_alternative<int64_t>(val.v) ? std::get<int64_t>(val.v)
-                            : static_cast<int64_t>(std::get<uint64_t>(val.v));
+            int64_t s = std::holds_alternative<int64_t>(val.v)
+                    ? std::get<int64_t>(val.v)
+                    : static_cast<int64_t>(std::get<uint64_t>(val.v));
             r.v = s;
         }
         checkRangeValue(r.type, r);
@@ -100,11 +91,11 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
     template <typename Op>
     static Value binOp(Value lhs, Value rhs, const std::string& opSym, Op op) {
 
-        if (lhs.type.Kind == Type::NORETURN || rhs.type.Kind == Type::NORETURN) {
+        if (lhs.type.isBuiltin() && lhs.type.builtin.Kind == Type::NORETURN || rhs.type.isBuiltin() && rhs.type.builtin.Kind == Type::NORETURN) {
             throw std::runtime_error("noreturn value cannot be used in expressions");
         }
 
-        if (lhs.type.Kind == Type::UNIT || rhs.type.Kind == Type::UNIT) {
+        if (lhs.type.isBuiltin() && lhs.type.builtin.Kind == Type::UNIT || rhs.type.isBuiltin() && rhs.type.builtin.Kind == Type::UNIT) {
             throw std::runtime_error("unit value cannot be used in expressions");
         }
     
@@ -112,11 +103,13 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
         if (rhs.isUntypedInt && !lhs.isUntypedInt) rhs = coerceUntypedTo(rhs, lhs.type);
 
         if (lhs.isUntypedInt && rhs.isUntypedInt) {
-            lhs = Value{Type{Type::I32}, std::get<int64_t>(asNum2(lhs)), false};
-            rhs = Value{Type{Type::I32}, std::get<int64_t>(asNum2(rhs)), false};
+            lhs = Value{ TypeRef::builtinType(Type{Type::I32}),
+             std::get<int64_t>(asNum2(lhs)), false };
+            rhs = Value{TypeRef::builtinType(Type{Type::I32}),
+             int64_t{std::get<int64_t>(asNum2(rhs))}, false};
         }
 
-        if (lhs.type.Kind != rhs.type.Kind) {
+        if ((lhs.type.isBuiltin() && (lhs.type.builtin.Kind != rhs.type.builtin.Kind))) {
             std::string msg = "type mismatch: ";
             msg += typeName(lhs.type);
             msg += " ";
@@ -129,7 +122,7 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
         normalizeValueStorage(lhs);
         normalizeValueStorage(rhs);
 
-        if (isUnsigned(lhs.type)) {
+        if (lhs.type.builtin.isUnsigned()) {
             uint64_t a = std::holds_alternative<uint64_t>(lhs.v) ? std::get<uint64_t>(lhs.v) : static_cast<uint64_t>(std::get<int64_t>(lhs.v));
             uint64_t b = std::holds_alternative<uint64_t>(rhs.v) ? std::get<uint64_t>(rhs.v) : static_cast<uint64_t>(std::get<int64_t>(rhs.v));
             
@@ -182,15 +175,15 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
         return nullptr;
     }
 
-    Type resolveType(const std::string& name) const {
+    TypeRef resolveType(const std::string& name) const {
         for (auto it = typeScopes.rbegin(); it != typeScopes.rend(); ++it) {
             auto found = it->find(name);
             if (found != it->end()) return found->second;
         }
-        return Type::fromString(name);
+        return TypeRef::builtinType(Type::fromString(name));
     }
 
-    void defineType(const std::string& name, const Type& t) {
+    void defineType(const std::string& name, const TypeRef& t) {
         auto& cur = typeScopes.back();
         if (cur.count(name)) throw std::runtime_error("type redefinition: " + name);
         cur.emplace(name, t);
@@ -200,15 +193,15 @@ public:
     EvalVisitor() {
         // Initialize type scopes
         pushScopes();
-        typeScopes.back().emplace("i8", Type{Type::I8});
-        typeScopes.back().emplace("u8", Type{Type::U8});
-        typeScopes.back().emplace("i32", Type{Type::I32});
-        typeScopes.back().emplace("int", Type{Type::I32});
-        typeScopes.back().emplace("u32", Type{Type::U32});
-        typeScopes.back().emplace("i64", Type{Type::I64});
-        typeScopes.back().emplace("u64", Type{Type::U64});
-        typeScopes.back().emplace("noreturn", Type{Type::NORETURN});
-        typeScopes.back().emplace("unit", Type{Type::UNIT});
+        typeScopes.back().emplace("i8", TypeRef::builtinType(Type{Type::I8}));
+        typeScopes.back().emplace("u8", TypeRef::builtinType(Type{Type::U8}));
+        typeScopes.back().emplace("i32", TypeRef::builtinType(Type{Type::I32}));
+        typeScopes.back().emplace("int", TypeRef::builtinType(Type{Type::I32}));
+        typeScopes.back().emplace("u32", TypeRef::builtinType(Type{Type::U32}));
+        typeScopes.back().emplace("i64", TypeRef::builtinType(Type{Type::I64}));
+        typeScopes.back().emplace("u64", TypeRef::builtinType(Type{Type::U64}));
+        typeScopes.back().emplace("noreturn", TypeRef::builtinType(Type{Type::NORETURN}));
+        typeScopes.back().emplace("unit", TypeRef::builtinType(Type{Type::UNIT}));
 
         // End initialization type scopes
     }
@@ -230,26 +223,70 @@ public:
             }
         }
         if (!entry) throw std::runtime_error("No entry point found");
-        Type retType = resolveType(entry->type()->getText());
+        TypeRef retType = resolveType(entry->type()->getText());
         currentFuncReturnType = retType;
+
+        for (auto* fd : ctx->funcDecl()) {
+            const std::string name = fd->name->getText();
+            std::vector<std::string> paramNames;
+            std::vector<TypeRef> paramTypes;
+            if (auto pl = fd->paramList()) {
+                for (auto* p : pl->param()) {
+                   paramNames.push_back(p->IDENT()->getText());
+                   paramTypes.push_back(makeTypeRefFrom(p->type()));
+                }
+            }
+
+            TypeRef retTr = makeTypeRefFrom(fd->type());
+
+            auto sig = std::make_shared<FunctionSig>();
+            sig->paramTypes = std::move(paramTypes);
+            sig->returnType = std::make_shared<TypeRef>(retTr);
+
+            FunctionValue fv{name, paramNames, sig };
+            FunctionDef def{ std::move(fv), fd->block() };
+            if (!functionTable.emplace(name, std::move(def)).second) {
+                throw std::runtime_error("function redefinition: " + name);
+            }
+        }
 
         try {
             visit(entry->block());
             // For functions declared as noreturn, reaching the end without a return is valid.
-            if (retType.Kind == Type::NORETURN || retType.Kind == Type::UNIT) {
-                return std::any{}; // no value
+            if (retType.isBuiltin() &&
+                (retType.builtin.Kind == Type::NORETURN || retType.builtin.Kind == Type::UNIT)) {
+                return std::any{};
             }
             throw std::runtime_error("function did not return a value");
         } catch (const ReturnSignal& rs) {
-            if (retType.Kind == Type::NORETURN || retType.Kind == Type::UNIT) {
+            if (retType.isBuiltin() && (retType.builtin.Kind == Type::NORETURN || retType.builtin.Kind == Type::UNIT)) {
                 return std::any{};
             }
             return static_cast<std::any>(asNum2(rs.value));
         }
     }
 
+    TypeRef makeTypeRefFrom(ClearLanguageParser::TypeContext* ctx) {
+        if (auto nt = dynamic_cast<ClearLanguageParser::NamedTypeContext*>(ctx)) {
+            Type bt = Type::fromString(nt->IDENT()->getText());
+            return TypeRef::builtinType(bt);
+        } else if (auto ut = dynamic_cast<ClearLanguageParser::UnitTypeContext*>(ctx)) {
+            return TypeRef::builtinType(Type{Type::UNIT});
+        } else if (auto ft = dynamic_cast<ClearLanguageParser::FunctionTypeContext*>(ctx)) {
+            auto sig = std::make_shared<FunctionSig>();
+            if (auto tl = ft->typeList()) {
+                for (auto* tctx : tl->type()) {
+                    sig->paramTypes.push_back(makeTypeRefFrom(tctx));
+                }
+            }
+            sig->returnType = std::make_shared<TypeRef>(makeTypeRefFrom(ft->type()));
+            return TypeRef::functionType(std::move(sig));
+        }
+        throw std::runtime_error("unknown type alt: " + ctx->getText());
+    }
+
     std::any visitUnitLiteral(ClearLanguageParser::UnitLiteralContext* ctx) override {
-        return Value{Type{Type::UNIT}, std::monostate{}, false};
+        return Value{ TypeRef::builtinType(Type{Type::UNIT}), std::monostate{}, false };
     }
 
     std::any visitStmtReturn(ClearLanguageParser::StmtReturnContext* ctx) override {
@@ -257,20 +294,20 @@ public:
             throw std::runtime_error("internal: function return type not set");
         }
 
-        if (currentFuncReturnType->Kind == Type::NORETURN) {
+        if (isNoReturn(*currentFuncReturnType)) {
             throw std::runtime_error("noreturn function cannot return");
         }
 
-        if (currentFuncReturnType->Kind == Type::UNIT) {
+        if (isUnit(*currentFuncReturnType)) {
             if (!ctx->expr()) {
-                throw ReturnSignal{false, {Type{Type::UNIT}, std::monostate{}, false}};
+                throw ReturnSignal{false, {TypeRef::builtinType(Type{Type::UNIT}), std::monostate{}, false}};
             }
             auto oldExpected = expectedType;
             expectedType = currentFuncReturnType;
             Value v = std::any_cast<Value>(visit(ctx->expr()));
             expectedType = oldExpected;
 
-            if (v.type.Kind != Type::UNIT) {
+            if (v.type.isBuiltin() && v.type.builtin.Kind != Type::UNIT) {
                 throw std::runtime_error(std::string("return type mismatch: expected unit, got ") + typeName(v.type));
             }
             throw ReturnSignal{false, v};
@@ -285,10 +322,10 @@ public:
         expectedType = currentFuncReturnType;
         Value v = std::any_cast<Value>(visit(ctx->expr()));
 
-        if (v.type.Kind == Type::NORETURN) {
+        if (v.type.isBuiltin() && isNoReturn(v.type)) {
             throw std::runtime_error("noreturn value cannot be returned");
         }
-        if (v.type.Kind == Type::UNIT) {
+        if (v.type.isBuiltin() && isUnit(v.type)) {
             throw std::runtime_error("unit value cannot be returned");
         }
 
@@ -297,7 +334,7 @@ public:
         Value out = v;
         if (v.isUntypedInt) {
             out = coerceUntypedTo(v, *currentFuncReturnType);
-        } else if (v.type.Kind != currentFuncReturnType->Kind) {
+        } else if (v.type.isBuiltin() && v.type.builtin.Kind != currentFuncReturnType->builtin.Kind) {
             std::string msg = "return type mismatch: expected ";
             msg += typeName(*currentFuncReturnType);
             msg += ", got ";
@@ -327,14 +364,14 @@ public:
     std::any visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext* ctx) override {
         auto* vd = ctx->varDecl();
         const std::string name = vd->IDENT()->getText();
-        Type t = resolveType(vd->type()->getText());
+        TypeRef t = resolveType(vd->type()->getText());
 
         // Currently, our language compiler doesn't have a function call variable, so until implement the function call variable, noreturn type is not allowed.
-        if (t.Kind == Type::NORETURN) {
+        if (isNoReturn(t)) {
             throw std::runtime_error("variable cannot have type 'noreturn'");
         }
 
-        if (t.Kind == Type::UNIT) {
+        if (isUnit(t)) {
             throw std::runtime_error("variable cannot have type 'unit'");
         }
 
@@ -353,7 +390,7 @@ public:
             if (init.isUntypedInt) {
                 finalVal = coerceUntypedTo(init, t);
             } else {
-                if (init.type.Kind != t.Kind) {
+                if (init.type.isBuiltin() && init.type.builtin.Kind != t.builtin.Kind) {
                     std::string msg = "type mismatch in initialization of ";
                     msg += name;
                     msg += ": expected ";
@@ -369,7 +406,7 @@ public:
             defineVar(name, finalVal);
         } else {
             // unsigned type 0u、signed type 0
-            defineVar(name, isUnsigned(t) ? Value{t, uint64_t{0}, false}
+            defineVar(name, t.builtin.isUnsigned() ? Value{t, uint64_t{0}, false}
                                           : Value{t, int64_t{0},  false});
         }
         
@@ -436,11 +473,11 @@ public:
 
         Value inner = std::any_cast<Value>(visit(ctx->inner));
 
-        if (inner.type.Kind == Type::NORETURN) {
+        if (isNoReturn(inner.type)) {
             throw std::runtime_error("noreturn value cannot be used in expressions");
         }
 
-        if (inner.type.Kind == Type::UNIT) {
+        if (isUnit(inner.type)) {
             throw std::runtime_error("unit value cannot be used in expressions");
         }
 
@@ -448,10 +485,10 @@ public:
             int64_t s = -(std::holds_alternative<int64_t>(inner.v)
                          ? std::get<int64_t>(inner.v)
                          : static_cast<int64_t>(std::get<uint64_t>(inner.v)));
-            return Value{Type{Type::I32}, int64_t{s}, false};
+            return Value{TypeRef::builtinType(Type{Type::I32}), s, false};
         }
         
-        if (inner.type.Kind == Type::U8) {
+        if (inner.type.isBuiltin() && inner.type.builtin.Kind == Type::U8) {
             // Now unsupported UnaryMinus for U8
             throw std::runtime_error("type mismatch: cannot negate unsigned type");
         }
@@ -461,17 +498,65 @@ public:
         return Value{inner.type, int64_t{res}, false};
     }
 
+    std::any visitPostfixExpr(ClearLanguageParser::PostfixExprContext* ctx) override {
+
+        std::string identName;
+        if (auto vr = dynamic_cast<ClearLanguageParser::VarRefContext*>(ctx->primary())) {
+            identName = vr->IDENT()->getText();
+        }
+
+        if (!ctx->callSuffix().empty()) {
+            if (!identName.empty()) {
+                auto tryCallByName = [&](const std::string& ident, ClearLanguageParser::CallSuffixContext* cs) -> Value {
+                    auto it = functionTable.find(ident);
+                    if (it == functionTable.end()) {
+                        throw std::runtime_error("undefined function: " + ident);
+                    }
+                    std::vector<Value> args;
+                    if (auto al = cs->argList()) {
+                        const auto& defRef = it->second;
+                        const auto& paramTs = defRef.fv.sig->paramTypes;
+
+                        for (size_t i = 0; i < al->expr().size(); ++i) {
+                            auto saved = expectedType;
+                            if (i < paramTs.size() && paramTs[i].isBuiltin()) {
+                                expectedType = paramTs[i];
+                            }
+                            Value v = std::any_cast<Value>(visit(al->expr(i)));
+                            expectedType = saved;
+                            args.push_back(v);
+                        }
+                    }
+                    return callFunction(it->second, args);
+                };
+
+                Value cur{};
+                for (auto* cs : ctx->callSuffix()) {
+
+                    cur = tryCallByName(identName, cs);
+                    identName.clear();
+                }
+                return cur;
+            } else {
+                // Example: (f)() is not supported now.
+                throw std::runtime_error("call to non-function");
+            }
+        }
+
+        Value cur = std::any_cast<Value>(visit(ctx->primary()));
+        return cur;
+    }
+
     std::any visitUnaryPrimary(ClearLanguageParser::UnaryPrimaryContext* ctx) override {
         return visitChildren(ctx);
     }
 
    std::any visitIntLiteral(ClearLanguageParser::IntLiteralContext* ctx) override {
         const std::string txt = ctx->INT()->getText();
-
-        if (expectedType && expectedType->Kind == Type::UNIT) { int64_t v = stoll(txt); return Value{Type{Type::I32}, v, true}; }
+        if (expectedType && isUnit(*expectedType)) { int64_t v = stoll(txt); return Value{TypeRef::builtinType(Type{Type::I32}), v, true}; }
 
         if (expectedType.has_value()) {
-            if (isUnsigned(*expectedType)) {
+            if (expectedType->builtin.isUnsigned()) {
                 uint64_t uv = static_cast<uint64_t>(std::stoull(txt));
                 Value val{*expectedType, uv, false};
                 checkRangeValue(val.type, val);
@@ -490,7 +575,7 @@ public:
             }
         }
         int64_t v = static_cast<int64_t>(std::stoll(txt));
-        return Value{Type{Type::I32}, v, true};
+        return Value{TypeRef::builtinType(Type{Type::I32}), v, true};
     }
 
     std::any visitParenExpr(ClearLanguageParser::ParenExprContext* ctx) override {
@@ -502,12 +587,78 @@ public:
     }
 
     static void normalizeValueStorage(Value& val){
-        if (isUnsigned(val.type)) {
+        if (val.type.isBuiltin() && isUnsigned(val.type.builtin)) {
             if (std::holds_alternative<int64_t>(val.v))
                 val.v = static_cast<uint64_t>(std::get<int64_t>(val.v));
         } else {
             if (std::holds_alternative<uint64_t>(val.v))
                 val.v = static_cast<int64_t>(std::get<uint64_t>(val.v));
+        }
+    }
+
+private:
+
+    static TypeRef requireBuiltinReturn(const FunctionDef& def) {
+        const auto& ret = *def.fv.sig->returnType;
+        if (!ret.isBuiltin()) {
+            throw std::runtime_error("non-builtin return types are not supported yet");
+        }
+        return ret;
+    }
+
+    Value callFunction(const FunctionDef& def, const std::vector<Value>& args) {
+
+        if (args.size() != def.fv.paramNames.size()) {
+            throw std::runtime_error("argument count mismatch");
+        }
+        if (def.fv.sig->paramTypes.size() != def.fv.paramNames.size()) {
+            throw std::runtime_error("internal: paramTypes/paramNames size mismatch");
+        }
+
+        pushScopes();
+        for (size_t i = 0; i < args.size(); ++i) {
+            const auto& tr = def.fv.sig->paramTypes[i];
+            if (!tr.isBuiltin()) {
+                throw std::runtime_error("non-builtin parameter types are not supported yet");
+            }
+            Value arg = args[i];
+            const TypeRef& pt = tr;
+
+            if (arg.isUntypedInt) {
+                arg = coerceUntypedTo(arg, pt);
+            } else if (arg.type.builtin.Kind != pt.builtin.Kind) {
+                std::string msg = "argument type mismatch at #" + std::to_string(i)
+                                + ": expected " + typeName(tr)
+                                + ", got " + typeName(arg.type);
+                throw std::runtime_error(msg);
+            } else {
+                checkRangeValue(pt, arg);
+            }
+            normalizeValueStorage(arg);
+            defineVar(def.fv.paramNames[i], arg);
+        }
+
+        auto saved = currentFuncReturnType;
+        TypeRef retTy = requireBuiltinReturn(def);
+        currentFuncReturnType = retTy;
+
+        try {
+            visit(def.body);
+            popScopes();
+            currentFuncReturnType = saved;
+
+            if (isUnit(retTy) || isNoReturn(retTy)) {
+                return Value{ TypeRef::builtinType(Type{Type::UNIT}), std::monostate{}, false };
+            }
+            throw std::runtime_error("function did not return a value");
+        } catch (const ReturnSignal& rs) {
+            popScopes();
+            currentFuncReturnType = saved;
+
+            if (!rs.hasValue || isUnit(rs.value.type) || isNoReturn(rs.value.type)) {
+                return Value{ TypeRef::builtinType(Type{Type::UNIT}), std::monostate{}, false };
+            }
+            return rs.value;
         }
     }
 };

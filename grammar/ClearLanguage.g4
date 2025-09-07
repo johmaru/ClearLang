@@ -14,7 +14,15 @@ mulExpr
 
 unaryExpr
     : '-' inner=unaryExpr        #unaryMinus
-    | primary                    #unaryPrimary
+    | postfixExpr                    #unaryPrimary
+    ;
+
+postfixExpr
+    : primary (callSuffix)*
+    ;
+
+callSuffix
+    : '(' argList? ')'
     ;
 
 primary
@@ -29,15 +37,25 @@ attributes
     ;
 
 funcDecl
-    : attributes* FUNC IDENT '(' paramList? ')' ARROW type block
+    : attributes* FUNC name=IDENT '(' paramList? ')' ARROW type block
     ;
 
 paramList
-    : IDENT (',' IDENT)*
+    : param (',' param)*
+    ;
+
+param
+    : IDENT ':' type
     ;
 
 type
-    : IDENT
+    : IDENT #namedType
+    | '(' typeList? ')' ARROW type #functionType
+    | '(' ')' #unitType
+    ;
+
+typeList
+    : type (',' type)*
     ;
 
 block
@@ -52,6 +70,10 @@ stmt
 
 varDecl
     : IDENT COLON type (ASSIGN expr)? SEMI
+    ;
+
+argList
+    : expr (',' expr)*
     ;
 
 FUNC: 'func';
