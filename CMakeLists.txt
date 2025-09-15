@@ -80,6 +80,9 @@ include_directories(${ANTLR4_OUTPUT_DIR})
 # 実行ファイルを作成
 add_executable(Clear
     src/main.cpp
+    src/ir/IRGenVisitor.cpp
+    src/sema/SemaBuilder.cpp
+    src/ir/IRGenFromSema.cpp
     ${ANTLR4_GENERATED_SOURCES} # 生成されたソースもコンパイル対象に含める
 )
 

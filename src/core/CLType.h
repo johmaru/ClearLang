@@ -1,3 +1,4 @@
+#pragma once
 #include <variant>
 #define CLTYPE_H
 #include <cstdint>
@@ -8,8 +9,75 @@
 #include <vector>
 #include <sstream>
 
+#if __has_include(<stdfloat>)
+    #include <stdfloat>
+    #define CL_HAVE_STD_FLOAT16 1
+#elif defined(__FLT16_MANT_DIG__) || defined(__STD_FLOAT16_T__) || defined(__MSC_VER)
+
+    #if defined(__clang__) || defined(__GNUC__) || defined(__MSC_VER)
+        #define CL_HAVE_STD_FLOAT16 1
+    #endif
+#endif
+
+struct CLHalf {
+    uint16_t bits {0};
+    CLHalf() = default;
+    explicit CLHalf(float f) { bits = floatToHalfBits(f); }
+    operator float() const { return halfBitsToFloat(bits); }
+
+    static uint16_t floatToHalfBits(float f);
+    static float halfBitsToFloat(uint16_t h);
+};
+
+inline uint16_t CLHalf::floatToHalfBits(float f) {
+    union {
+        float f;
+        uint32_t u;
+    } v{f};
+    uint32_t sign = (v.u >> 16) & 0x8000u;
+    uint32_t mant = v.u & 0x007FFFFFu;
+    int32_t exp = int32_t((v.u >> 23) & 0xFF) - 112;
+
+    if (exp <= 0) {
+        if (exp < -10) return uint16_t(sign);
+        mant |= 0x00800000u;
+        uint32_t shifted = mant >> (1 - exp);
+        return uint16_t(sign | (shifted + 0x00001000u) >> 13);
+    } else if (exp >= 31) {
+        if (mant == 0) return uint16_t(sign | 0x7C00u);
+        return uint16_t(sign | 0x7C00u | (mant >> 13));
+    }
+    uint16_t half = uint16_t(sign | (exp << 10) | (mant + 0x00001000u) >> 13);
+    return half;
+}
+
+inline float CLHalf::halfBitsToFloat(uint16_t h) {
+    union {uint32_t u; float f;} v;
+    uint32_t sign = (h & 0x8000u) << 16;
+    uint32_t exp = (h >> 10) & 0x1Fu;
+    uint32_t mant = h & 0x3FFu;
+    if (exp == 0) {
+        if (mant == 0) {
+            v.u = sign;
+        } else {
+            exp = 1;
+            while ((mant & 0x400u) == 0) {
+                mant <<= 1;
+                exp--;
+            }
+            mant &= 0x3FFu;
+            v.u = sign | ((exp - 15 + 127) << 23) | (mant << 13);
+        }
+    } else if (exp == 31) {
+        v.u = sign | 0x7F800000u | (mant << 13);
+    } else {
+        v.u = sign | ((exp - 15 + 127) << 23) | (mant << 13);
+    }
+    return v.f;
+}
+
 struct Type {
-    enum Kind { I8, U8, I32, U32, I64, U64, NORETURN, UNIT } Kind;
+    enum Kind { I8, U8, I32, U32, I64, U64, F16, NORETURN, UNIT } Kind;
     bool isUnsigned() const {
         return Kind == U8 || Kind == U32 || Kind == U64;
     }
@@ -29,6 +97,19 @@ struct Type {
             case U32: return {std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max()};
             case U64: return {std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max()};
             default: throw std::runtime_error("type is not unsigned");
+        }
+    }
+
+    std::pair<float, float> floatBounds() const {
+        switch (Kind) {
+            case F16: {
+                #if defined(CL_HAVE_STD_FLOAT16)
+                    return { -65504.0f, 65504.0f };
+                #else
+                    return { -65504.0f, 65504.0f };
+                #endif
+            };
+            default: throw std::runtime_error("type is not float");
         }
     }
 
@@ -53,6 +134,7 @@ struct Type {
         if (s == "u32") return {U32};
         if (s == "i64") return {I64};
         if (s == "u64") return {U64};
+        if (s == "f16") return {F16};
         if (s == "noreturn") return {NORETURN};
         if (s == "unit" || s == "()") return {UNIT};
         throw std::runtime_error("unknown type: " + s);
@@ -104,7 +186,7 @@ struct FunctionValue {
 
 struct Value {
     TypeRef type;
-    std::variant<int64_t, uint64_t, std::monostate, FunctionValue> v;
+    std::variant<int64_t, uint64_t, std::monostate, FunctionValue, CLHalf> v;
     bool isUntypedInt = false;
 };
 
@@ -118,6 +200,11 @@ inline std::variant<int64_t,uint64_t> asNum2(const Value& v) {
     throw std::runtime_error("non-numeric value cannot be used as a number");
 }
 
+inline float asFloat(const Value& v) {
+    if (std::holds_alternative<CLHalf>(v.v)) return static_cast<float>(std::get<CLHalf>(v.v));
+    throw std::runtime_error("non-float value cannot be used as a float");
+}
+
 inline const char* builtinTypeName(const Type& t) {
     switch (t.Kind) {
         case Type::I8: return "i8";
@@ -126,6 +213,7 @@ inline const char* builtinTypeName(const Type& t) {
         case Type::U32: return "u32";
         case Type::I64: return "i64";
         case Type::U64: return "u64";
+        case Type::F16: return "f16";
         case Type::NORETURN: return "noreturn";
         case Type::UNIT: return "unit";
     }

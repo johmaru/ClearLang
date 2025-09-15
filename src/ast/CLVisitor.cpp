@@ -12,6 +12,7 @@
 #include "ClearLanguageParser.h"
 #include "ClearLanguageBaseVisitor.h"
 #include "../core/CLType.h"
+#include <cmath>
 
 using namespace antlr4;
 
@@ -60,6 +61,27 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
 
     static void checkRangeValue(const TypeRef& t, const Value& v) {
         if (isUnit(v.type)) throw std::runtime_error("unit value cannot be used in expressions");
+        if (!t.isBuiltin()) throw std::runtime_error("numeric range checked on non-builtin: " + typeName(t));
+
+        if (t.builtin.Kind == Type::F16) {
+            float f = 0.0f;
+            if (std::holds_alternative<CLHalf>(v.v)) {
+                f = static_cast<float>(std::get<CLHalf>(v.v));
+            } else if (std::holds_alternative<int64_t>(v.v)) {
+                f = static_cast<float>(std::get<int64_t>(v.v));
+            } else if (std::holds_alternative<uint64_t>(v.v)) {
+                f = static_cast<float>(std::get<uint64_t>(v.v));
+            } else {
+                throw std::runtime_error("non-float value cannot be used as a float");
+            }
+            if (!std::isfinite(f) || f < -65504.0f || f > 65504.0f) {
+                std::string msg = "initializer out of range; allowed range: [-65504.0..65504.0] for type f16";
+                throw std::runtime_error(msg);
+            }
+            // Early return for F16 so we don't fall through to integer range checks
+            return;
+        }
+
         auto nv = asNum2(v);
         checkRange(t, nv);
     }
@@ -200,6 +222,7 @@ public:
         typeScopes.back().emplace("u32", TypeRef::builtinType(Type{Type::U32}));
         typeScopes.back().emplace("i64", TypeRef::builtinType(Type{Type::I64}));
         typeScopes.back().emplace("u64", TypeRef::builtinType(Type{Type::U64}));
+        typeScopes.back().emplace("f16", TypeRef::builtinType(Type{Type::F16}));
         typeScopes.back().emplace("noreturn", TypeRef::builtinType(Type{Type::NORETURN}));
         typeScopes.back().emplace("unit", TypeRef::builtinType(Type{Type::UNIT}));
 
@@ -492,6 +515,18 @@ public:
             // Now unsupported UnaryMinus for U8
             throw std::runtime_error("type mismatch: cannot negate unsigned type");
         }
+
+        if (inner.type.isBuiltin() && inner.type.builtin.Kind == Type::F16) {
+            if (!std::holds_alternative<CLHalf>(inner.v)) {
+                throw std::runtime_error("type mismatch: expected f16 value");
+            }
+            CLHalf f = std::get<CLHalf>(inner.v);
+            CLHalf res;
+            res.bits = static_cast<uint16_t>(f.bits ^ 0x8000u);
+            return Value{inner.type, res, false};
+        }
+
+
         int64_t a = std::holds_alternative<int64_t>(inner.v) ? std::get<int64_t>(inner.v) : static_cast<int64_t>(std::get<uint64_t>(inner.v));
         int64_t res = -a;
         checkRange(inner.type, std::variant<int64_t, uint64_t>{res});
@@ -549,6 +584,31 @@ public:
 
     std::any visitUnaryPrimary(ClearLanguageParser::UnaryPrimaryContext* ctx) override {
         return visitChildren(ctx);
+    }
+    
+    std::any visitFloatLiteral(ClearLanguageParser::FloatLiteralContext* ctx) override {
+        const std::string txt = ctx->FLOAT()->getText();
+        if (expectedType && isUnit(*expectedType)) {
+            throw std::runtime_error("cannot use float literal to initialize unit type");
+        }
+        float f = std::stof(txt);
+        if (expectedType.has_value()) {
+            if (expectedType->isBuiltin() && expectedType->builtin.Kind == Type::F16) {
+                if (!std::isfinite(f) || f < -65504.0f || f > 65504.0f) {
+                    std::string msg = std::string("initializer out of range: ") + txt + "; allowed range: [-65504.0..65504.0] for type f16";
+                    throw std::runtime_error(msg);
+                }
+                return Value{*expectedType, CLHalf{f}, false};
+            } else {
+                throw std::runtime_error("only f16 type is supported for float literals");
+            }
+        }
+        // Default to f16 if no expected type
+        if (!std::isfinite(f) || f < -65504.0f || f > 65504.0f) {
+            std::string msg = std::string("initializer out of range: ") + txt + "; allowed range: [-65504.0..65504.0] for type f16";
+            throw std::runtime_error(msg);
+        }
+        return Value{TypeRef::builtinType(Type{Type::F16}), CLHalf{f}, false};
     }
 
    std::any visitIntLiteral(ClearLanguageParser::IntLiteralContext* ctx) override {

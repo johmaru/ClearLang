@@ -23,7 +23,7 @@ This generates CMake files under `build/generators/` and a toolchain file used b
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -DCMAKE_TOOLCHAIN_FILE="$PWD/build/generators/conan_toolchain.cmake"
 cmake --build build --config Release
-.\build\Release\Clear.exe "[EntryPoint] func test() {1 + 2}"
+.\build\Release\Clear.exe --emit-llvm or .\build\Release\Clear.exe --debug-print
 ```
 
 Notes

@@ -5,11 +5,11 @@ start: funcDecl+ EOF;
 expr: addExpr;
 
 addExpr
-    : left=mulExpr (op=('+'|'-') right=mulExpr)*
+    : left=mulExpr (op+=('+'|'-') right+=mulExpr)*
     ;
 
 mulExpr
-    : left=unaryExpr (op=('*'|'/') right=unaryExpr)*
+    : left=unaryExpr (op+=('*'|'/') right+=unaryExpr)*
     ;
 
 unaryExpr
@@ -26,7 +26,8 @@ callSuffix
     ;
 
 primary
-    : INT                        #intLiteral
+    : FLOAT                      #floatLiteral
+    | INT                        #intLiteral
     | IDENT                      #varRef
     | '(' expr ')'               #parenExpr
     | '(' ')'                    #unitLiteral
@@ -83,7 +84,9 @@ COLON: ':';
 ASSIGN: '=';
 RETURN: 'return';
 IDENT: [a-zA-Z_][a-zA-Z0-9_]*;
-
+fragment DIGITS: [0-9]+;
+fragment EXP: [eE] [+-]? DIGITS;
+FLOAT: DIGITS '.' DIGITS? EXP? | '.' DIGITS EXP? | DIGITS EXP;
 INT: [0-9]+;
 
 LINE_COMMENT: '//' ~[\r\n]* -> skip;
