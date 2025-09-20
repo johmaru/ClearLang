@@ -1,37 +1,53 @@
 {
   "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21
+  },
   "configurePresets": [
     {
-      "name": "msvc-ninja-release",
-      "displayName": "MSVC + Ninja (Release)",
+      "name": "ninja-debug",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-ninja",
+      "binaryDir": "${sourceDir}/out/build/ninja-debug",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/ninja_no_platform_toolchain.cmake",
-        "CMAKE_PREFIX_PATH": "${sourceDir}/build/generators",
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_C_COMPILER": "cl",
-        "CMAKE_CXX_COMPILER": "cl",
-        "CMAKE_GENERATOR_TOOLSET": ""
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/wrap_conan_toolchain.cmake",
+        "CMAKE_GENERATOR_TOOLSET": "",
+        "CMAKE_CXX_STANDARD": "23"
       },
       "environment": {
-        "Platform": null,
-        "VSCMD_ARG_TGT_ARCH": null,
-        "PreferredToolArchitecture": null,
-        "CMAKE_GENERATOR_PLATFORM": null,
-        "CMAKE_GENERATOR_TOOLSET": ""
+        "Platform": "",
+        "CMAKE_GENERATOR_PLATFORM": "",
+        "VSCMD_ARG_TGT_ARCH": "x64"
+      }
+    },
+    {
+      "name": "ninja-release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/ninja-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/wrap_conan_toolchain.cmake",
+        "CMAKE_GENERATOR_TOOLSET": "",
+        "CMAKE_CXX_STANDARD": "23"
       },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
+      "environment": {
+        "Platform": "",
+        "CMAKE_GENERATOR_PLATFORM": "",
+        "VSCMD_ARG_TGT_ARCH": "x64"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "msvc-ninja-release",
-      "configurePreset": "msvc-ninja-release"
+      "name": "ninja-debug",
+      "configurePreset": "ninja-debug"
+    },
+    {
+      "name": "ninja-release",
+      "configurePreset": "ninja-release"
     }
   ]
 }

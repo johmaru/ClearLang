@@ -1,14 +1,16 @@
-Project tree snapshot (2025-09-15)
+Project tree snapshot (2025-09-21)
 
 Top-level directories:
 - .cache
 - .github
 - .serena
+- .vs
 - .vscode
 - build
 - build-ninja
 - cmake
 - grammar
+- out
 - scripts
 - sema_readme
 - src
@@ -19,9 +21,9 @@ Top-level files:
 - .gitignore
 - CMakeLists.txt
 - CMakePresets.json
-- CMakeUserPresets.json
 - compile_commands.json
 - conanfile.txt
+- Folder.DotSettings
 - README.md
 
 Key source files (src):
@@ -34,6 +36,8 @@ Key source files (src):
 - src\ir\IRGenFromSema.h
 - src\ir\IRGenVisitor.cpp
 - src\ir\IRGenVisitor.h
+- src\llvm\Executer.cpp
+- src\llvm\Executer.h
 - src\main.cpp
 - src\runtime\host_runtime.cpp
 - src\sema\SemaBuilder.cpp

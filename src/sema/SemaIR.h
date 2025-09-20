@@ -40,6 +40,11 @@ namespace sema {
     };
 
     struct StmtReturn : Stmt { std::shared_ptr<Expr> value; };
+
+    struct StmtExpr : Stmt {
+        std::shared_ptr<Expr> expr;
+	};
+
     struct Block : Stmt {
         std::vector<std::shared_ptr<Stmt>> statements;
     };

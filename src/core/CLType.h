@@ -77,27 +77,47 @@ inline float CLHalf::halfBitsToFloat(uint16_t h) {
 }
 
 struct Type {
-    enum Kind { I8, U8, I32, U32, I64, U64, F16, NORETURN, UNIT } Kind;
+    enum Kind { I8, U8, I16, U16, I32, U32, I64, U64, F16, NORETURN, UNIT, STRING } Kind;
     bool isUnsigned() const {
-        return Kind == U8 || Kind == U32 || Kind == U64;
+        return Kind == U8 || Kind == U16 || Kind == U32 || Kind == U64;
     }
 
     std::pair<int64_t, int64_t> signedBounds() const {
         switch (Kind) {
             case I8: return {std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()};
+            case I16: return {std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()};
             case I32: return {std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max()};
             case I64: return {std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max()};
-            default: throw std::runtime_error("type is not signed");
+	        case U8:
+	        case U16:
+	        case U32:
+	        case U64:
+	        case F16:
+	        case NORETURN:
+	        case UNIT:
+	        case STRING:
+				throw std::runtime_error("type is not signed");
         }
+		throw std::runtime_error("unreachable");
     }
 
     std::pair<uint64_t, uint64_t> unsignedBounds() const {
         switch (Kind) {
             case U8: return {std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max()};
+            case U16: return {std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max()};
             case U32: return {std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max()};
             case U64: return {std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max()};
-            default: throw std::runtime_error("type is not unsigned");
+	        case I8:
+	        case I16:
+	        case I32:
+	        case I64:
+	        case F16:
+	        case NORETURN:
+	        case UNIT:
+	        case STRING:
+				throw std::runtime_error("type is not unsigned");
         }
+		throw std::runtime_error("unreachable");
     }
 
     std::pair<float, float> floatBounds() const {
@@ -108,9 +128,21 @@ struct Type {
                 #else
                     return { -65504.0f, 65504.0f };
                 #endif
-            };
-            default: throw std::runtime_error("type is not float");
+            }
+        case I8:
+        case U8:
+        case I16:
+        case U16:
+        case I32:
+        case U32:
+        case I64:
+        case U64:
+        case NORETURN:
+        case UNIT:
+        case STRING:
+			 throw std::runtime_error("type is not float");
         }
+		throw std::runtime_error("unreachable");
     }
 
     bool fits(const std::variant<int64_t,uint64_t>& v) const {
@@ -128,8 +160,10 @@ struct Type {
     }
 
     static Type fromString(const std::string& s) {
-        if (s == "u8") return {U8};
         if (s == "i8") return {I8};
+        if (s == "u8") return {U8};
+        if (s == "i16") return {I16};
+        if (s == "u16") return {U16};
         if (s == "i32" ||s == "int") return {I32};
         if (s == "u32") return {U32};
         if (s == "i64") return {I64};
@@ -137,6 +171,7 @@ struct Type {
         if (s == "f16") return {F16};
         if (s == "noreturn") return {NORETURN};
         if (s == "unit" || s == "()") return {UNIT};
+		if (s == "string") return { STRING };
         throw std::runtime_error("unknown type: " + s);
     }
 };
@@ -186,7 +221,7 @@ struct FunctionValue {
 
 struct Value {
     TypeRef type;
-    std::variant<int64_t, uint64_t, std::monostate, FunctionValue, CLHalf> v;
+    std::variant<int64_t, uint64_t, std::monostate, FunctionValue, CLHalf, std::string> v;
     bool isUntypedInt = false;
 };
 
@@ -209,6 +244,8 @@ inline const char* builtinTypeName(const Type& t) {
     switch (t.Kind) {
         case Type::I8: return "i8";
         case Type::U8: return "u8";
+        case Type::I16: return "i16";
+        case Type::U16: return "u16";
         case Type::I32: return "i32";
         case Type::U32: return "u32";
         case Type::I64: return "i64";
@@ -216,6 +253,7 @@ inline const char* builtinTypeName(const Type& t) {
         case Type::F16: return "f16";
         case Type::NORETURN: return "noreturn";
         case Type::UNIT: return "unit";
+		case Type::STRING: return "string";
     }
     return "?";
 }
@@ -241,4 +279,32 @@ inline bool fits(const TypeRef& t, const std::variant<int64_t,uint64_t>& v) {
     if (!t.isBuiltin())
         throw std::runtime_error("numeric property requested on non-numeric type: " + typeName(t));
     return t.builtin.fits(v);
+}
+
+inline bool is_string(const TypeRef& t) {
+    return t.isBuiltin() && t.builtin.Kind == Type::STRING;
+}
+
+inline bool is_unit(const TypeRef& t) {
+    return t.isBuiltin() && t.builtin.Kind == Type::UNIT;
+}
+
+inline const std::string& as_string(const Value& v) {
+    if (!std::holds_alternative<std::string>(v.v))
+		throw std::runtime_error("value is not a string");
+	return std::get<std::string>(v.v);
+}
+
+inline Value make_string(std::string s)
+{
+	return Value{ TypeRef::builtinType(Type{Type::STRING}), std::move(s), false };
+}
+
+inline Value concat_string(const Value& lhs, const Value& rhs)
+{
+    if (!is_string(lhs.type) || !is_string(rhs.type))
+        throw std::runtime_error("type mismatch: string concat requires string + string");
+    const auto& a = std::get<std::string>(lhs.v);
+    const auto& b = std::get<std::string>(rhs.v);
+    return make_string(a + b);
 }

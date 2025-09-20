@@ -1,6 +1,6 @@
-ClearLanguage overview (auto, 2025-09-15)
+ClearLanguage overview (auto, 2025-09-21)
 
 Stack: ANTLR4 (grammar at grammar/ClearLanguage.g4), LLVM, CMake + Presets, Conan, C++17
 Entrypoint: src/main.cpp
 Build outputs: build/, build-ninja/
-Executables present: 388
+Executables present: 387

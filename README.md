@@ -8,22 +8,42 @@ This project uses Conan (deps), CMake (build), ANTLR (parser gen), and LLVM.
 - Java 11+ (for ANTLR codegen): `java -version`
 - Optional: Ninja (for compile_commands.json) `winget install Ninja-build.Ninja`
 
+
+### Programmng Language Reference
+
+See [language reference](./sema_readme/language_sema_en.md).
+
 ---
+
+## Need edit .conan2 global.conf
+```powershell
+tools.cmake.cmaketoolchain:generator=Ninja
+tools.cmake.cmaketoolchain:user_presets=
+```
 
 ## 1) Fetch dependencies (Conan)
 ```powershell
-conan install . -of . -s build_type=Release --build=missing
+conan install . -s build_type=Debug -of out/conan/ninja-debug -b missing
 ```
 
-This generates CMake files under `build/generators/` and a toolchain file used by CMake.
+This generates CMake files under `out/conan/build/generators/` and a toolchain file used by CMake.
 
 ---
 
 ## 2) Build with Visual Studio generator (recommended for day-to-day)
+
+Debug
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -DCMAKE_TOOLCHAIN_FILE="$PWD/build/generators/conan_toolchain.cmake"
-cmake --build build --config Release
-.\build\Release\Clear.exe --emit-llvm or .\build\Release\Clear.exe --debug-print
+cmake --preset ninja-debug
+cmake --build --preset ninja-debug
+.\out\build\ninja-debug\Clear.exe --emit-llvm or .\out\build\ninja-debug\Clear.exe --debug-print
+```
+
+Release
+```powershell
+conan install . -s build_type=Release -of out/conan/ninja-release -b missing
+cmake --preset ninja-release
+cmake --build --preset ninja-release
 ```
 
 Notes

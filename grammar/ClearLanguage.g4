@@ -5,8 +5,11 @@ start: funcDecl+ EOF;
 expr: addExpr;
 
 addExpr
-    : left=mulExpr (op+=('+'|'-') right+=mulExpr)*
+    : left=mulExpr (op+=(PLUS|MINUS) right+=mulExpr)*
     ;
+
+PLUS: '+';
+MINUS: '-';
 
 mulExpr
     : left=unaryExpr (op+=('*'|'/') right+=unaryExpr)*
@@ -28,6 +31,7 @@ callSuffix
 primary
     : FLOAT                      #floatLiteral
     | INT                        #intLiteral
+    | STRING                     #stringLiteral
     | IDENT                      #varRef
     | '(' expr ')'               #parenExpr
     | '(' ')'                    #unitLiteral
@@ -83,6 +87,8 @@ SEMI: ';';
 COLON: ':';
 ASSIGN: '=';
 RETURN: 'return';
+STRING: '"' (ESC_SEQ | ~["\\])* '"';
+fragment ESC_SEQ: '\\' [btnfr"'\\];
 IDENT: [a-zA-Z_][a-zA-Z0-9_]*;
 fragment DIGITS: [0-9]+;
 fragment EXP: [eE] [+-]? DIGITS;

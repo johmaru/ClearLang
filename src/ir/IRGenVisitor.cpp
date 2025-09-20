@@ -75,17 +75,25 @@ std::any IRGenVisitor::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
 llvm::Type* IRGenVisitor::toLlvmType(const TypeRef& t) {
     if (!t.isBuiltin()) notImplemented("toLlvmType: non-builtin type");
     switch (t.builtin.Kind) {
-        case Type::I8:  return llvm::Type::getInt8Ty(ctx_);
-        case Type::U8:  return llvm::Type::getInt8Ty(ctx_);
-        case Type::I32: return llvm::Type::getInt32Ty(ctx_);
-        case Type::U32: return llvm::Type::getInt32Ty(ctx_);
-        case Type::I64: return llvm::Type::getInt64Ty(ctx_);
-        case Type::U64: return llvm::Type::getInt64Ty(ctx_);
-        case Type::F16: return llvm::Type::getHalfTy(ctx_);
-        case Type::UNIT: return llvm::Type::getVoidTy(ctx_);
-        case Type::NORETURN: return llvm::Type::getVoidTy(ctx_);
-        default: notImplemented("toLlvmType: unknown kind");
+        case Type::I8:
+        case Type::U8:
+            return llvm::Type::getInt8Ty(ctx_);
+		case Type::I16:
+		case Type::U16:
+			return llvm::Type::getInt16Ty(ctx_);
+        case Type::I32:
+        case Type::U32:
+            return llvm::Type::getInt32Ty(ctx_);
+        case Type::I64:
+        case Type::U64:
+            return llvm::Type::getInt64Ty(ctx_);
+        case Type::F16:
+            return llvm::Type::getHalfTy(ctx_);
+        case Type::UNIT:
+        case Type::NORETURN:
+            return llvm::Type::getVoidTy(ctx_);
     }
+    llvm_unreachable("toLlvmType: unknown kind");
 }
 
 llvm::Constant* IRGenVisitor::toLlvmConstant(const Value& v) {
@@ -103,6 +111,18 @@ llvm::Constant* IRGenVisitor::toLlvmConstant(const Value& v) {
             uint64_t u = std::holds_alternative<uint64_t>(nv) ? std::get<uint64_t>(nv) : static_cast<uint64_t>(std::get<int64_t>(nv));
             return llvm::ConstantInt::get(ty8, u, false);
         }
+		case Type::I16: {
+				auto* ty16 = llvm::Type::getInt16Ty(ctx_);
+				auto nv = asNum2(v);
+				int64_t s = std::holds_alternative<int64_t>(nv) ? std::get<int64_t>(nv) : static_cast<int64_t>(std::get<uint64_t>(nv));
+				return llvm::ConstantInt::get(ty16, s, true);
+	        }
+		case Type::U16: {
+				auto* ty16 = llvm::Type::getInt16Ty(ctx_);
+				auto nv = asNum2(v);
+				uint64_t u = std::holds_alternative<uint64_t>(nv) ? std::get<uint64_t>(nv) : static_cast<uint64_t>(std::get<int64_t>(nv));
+				return llvm::ConstantInt::get(ty16, u, false);
+	        }
         case Type::I32: {
             auto* ty32 = llvm::Type::getInt32Ty(ctx_);
             auto nv = asNum2(v);
@@ -133,8 +153,11 @@ llvm::Constant* IRGenVisitor::toLlvmConstant(const Value& v) {
             llvm::APFloat apf(llvm::APFloat::IEEEhalf(), llvm::APInt(16, h.bits));
             return llvm::ConstantFP::get(llvm::Type::getHalfTy(ctx_), apf);
         }
-        default: notImplemented("toLlvmConstant: unsupported type");
+        case Type::UNIT:
+        case Type::NORETURN:
+            notImplemented("toLlvmConstant: UNIT/NORETURN have no value representation");
     }
+	llvm_unreachable("toLlvmConstant: unknown kind");
 }
 
 llvm::Value* IRGenVisitor::emitF16BinOp(const std::string& op, llvm::Value* lhs, llvm::Value* rhs) {

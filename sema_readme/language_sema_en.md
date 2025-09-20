@@ -4,11 +4,14 @@
 
 - u8  | unsigned 8bit integer
 - i8  | signed 8bit integer
+- u16 | unsigned 16bit integer
+- i16 | signed 16bit integer
 - u32 | unsigned 32bit integer
 - i32 | signed 32bit integer
 - u64 | unsigned 64bit integer
 - i64 | signed 64bit integer
 - f16 | 16bit floating point
+- string | string value
 - noreturn | not back a control
 - unit or ()  | no value, return number of zero size value
 
@@ -43,6 +46,12 @@ func decrease(a:f16, b:f16) -> f16 {
 }
 ```
 
+string Example
+```
+```
+
+* string cant be connect other type. only string + string is ok.
+
 Unit Example
 
 ``` 
@@ -57,3 +66,16 @@ func test() -> unit {
 execute result is no value.
 
 If an untyped integer exists, it is identified as i32.
+
+## Exported Function
+
+Printf(string)
+```
+func test() -> i16 {
+    a: i16 = 50;
+    b: i16 = 30;
+	c: string = "hello world!\n";
+	__cl_printf(c);
+    return decrease(a, b);
+}
+```

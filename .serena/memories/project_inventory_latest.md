@@ -1,9 +1,8 @@
-Files of interest snapshot (2025-09-15)
+Files of interest snapshot (2025-09-21)
 
 Key files:
 - CMakeLists.txt
 - CMakePresets.json
-- CMakeUserPresets.json
 - conanfile.txt
 - README.md
 - compile_commands.json
@@ -86,7 +85,6 @@ Executables:
 - build\Clear.dir\Release\Clear.tlog\link.read.1.tlog
 - build\Clear.dir\Release\Clear.tlog\link.secondary.1.tlog
 - build\Clear.dir\Release\Clear.tlog\link.write.1.tlog
-- build\Clear.dir\Release\Clear.tlog\unsuccessfulbuild
 - build\Clear.dir\Release\ClearLanguageLexer.obj
 - build\Clear.dir\Release\ClearLanguageParser.obj
 - build\Clear.dir\Release\IRGenFromSema.obj
@@ -352,7 +350,7 @@ Executables:
 - build-ninja\.cmake\api\v1\reply\cmakeFiles-v1-41c611558cd909b53ed2.json
 - build-ninja\.cmake\api\v1\reply\codemodel-v2-303f2629e947f1e03384.json
 - build-ninja\.cmake\api\v1\reply\directory-.-Release-d0094a50bb2071803777.json
-- build-ninja\.cmake\api\v1\reply\index-2025-09-15T07-03-56-0314.json
+- build-ninja\.cmake\api\v1\reply\index-2025-09-17T04-24-52-0420.json
 - build-ninja\.cmake\api\v1\reply\target-acc_gen-Release-dcd16968341c1afba464.json
 - build-ninja\.cmake\api\v1\reply\target-Clear-Release-2e3a4538cca6766e16d6.json
 - build-ninja\.cmake\api\v1\reply\target-copy_compile_commands-Release-45e88fdcfc48c57233c3.json
@@ -399,5 +397,5 @@ Executables:
 - build-ninja\generated\ClearLanguageVisitor.h
 
 Counts:
-- src files: 14
+- src files: 16
 - grammar files: 9

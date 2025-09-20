@@ -1,30 +1,25 @@
-# CMakeの最低バージョンを指定
 cmake_minimum_required(VERSION 3.15)
-
-# プロジェクト名と言語を設定
 project(ClearLanguage CXX)
 
-# C++17を必須に設定 (ANTLRとLLVMが要求するため)
+# ここで system 扱い抑止 (find_package より前)
+set(CMAKE_NO_SYSTEM_FROM_IMPORTED ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# clangd向け: コンパイルコマンドDBを生成
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# MSVCでUTF-8のソースを正しく扱う
 if (MSVC)
-    add_compile_options(/utf-8)
-    # 追加: C++例外を有効化（/EHsc: 同期例外のみ有効化）
-    add_compile_options(/EHsc)
+    add_compile_options(/utf-8 /EHsc)
+    
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("/external:anglebrackets" MSVC_HAS_EXTERNAL_ANGLEBRACKETS)
+    if (MSVC_HAS_EXTERNAL_ANGLEBRACKETS)
+        # 必要になったらコメント解除（既定は未指定＝通常扱い）
+        # add_compile_options(/external:anglebrackets)
+    endif()
 endif()
 
-# -----------------------------------------------------------------------------
-# 1. Conan経由で依存関係を検索
-# -----------------------------------------------------------------------------
-# conan installで生成された設定を読み込み、find_packageがライブラリを見つけられるようにする
-# ConanのCMakeDepsが生成するパッケージ名に合わせる（antlr4-runtime）
+# 依存
 find_package(antlr4-runtime CONFIG REQUIRED)
-# ConanのCMakeDepsが出力するLLVMConfig.cmakeを利用
 find_package(LLVM CONFIG REQUIRED)
 
 # -----------------------------------------------------------------------------
@@ -56,7 +51,6 @@ set(ANTLR4_GENERATED_HEADERS
     ${ANTLR4_OUTPUT_DIR}/ClearLanguageListener.h
 )
 
-# コードを生成するカスタムコマンドを定義
 add_custom_command(
     OUTPUT ${ANTLR4_GENERATED_SOURCES}
     COMMAND java -jar ${ANTLR4_JAR_PATH} -Dlanguage=Cpp -visitor -o ${ANTLR4_OUTPUT_DIR} ${ANTLR4_GRAMMAR_FILE}
@@ -65,13 +59,11 @@ add_custom_command(
     COMMENT "Generating ANTLR parser for ClearLanguage"
 )
 
-# 生成されたソースをまとめるカスタムターゲットを作成
 add_custom_target(
     generate_parser ALL
     DEPENDS ${ANTLR4_GENERATED_SOURCES}
 )
 
-# 生成されたヘッダファイルを見つけられるようにインクルードパスを追加
 include_directories(${ANTLR4_OUTPUT_DIR})
 
 # -----------------------------------------------------------------------------
@@ -83,8 +75,10 @@ add_executable(Clear
     src/ir/IRGenVisitor.cpp
     src/sema/SemaBuilder.cpp
     src/ir/IRGenFromSema.cpp
-    ${ANTLR4_GENERATED_SOURCES} # 生成されたソースもコンパイル対象に含める
-)
+    src/runtime/host_runtime.cpp
+    src/llvm/Executer.cpp
+    ${ANTLR4_GENERATED_SOURCES}
+ )
 
 # 実行ファイルがコード生成完了を待つように依存関係を設定
 add_dependencies(Clear generate_parser)
@@ -95,17 +89,15 @@ target_link_libraries(Clear PRIVATE
     llvm-core::llvm-core
 )
 
-# 追加: 例外/RTTI を明示（Clang/ GCC 用）。MSVC は /EHsc を再度明示。
-target_compile_options(Clear PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
-    $<$<CXX_COMPILER_ID:Clang>:-fexceptions -frtti>
-    $<$<CXX_COMPILER_ID:GNU>:-fexceptions -frtti>
-)
+# Conan の imported からインクルードを通常 /I として再注入
+foreach(_dep antlr4_static llvm-core::llvm-core)
+    get_target_property(_incs ${_dep} INTERFACE_INCLUDE_DIRECTORIES)
+    if(_incs)
+        target_include_directories(Clear PRIVATE ${_incs})
+    endif()
+endforeach()
 
-# 生成物ヘッダーをターゲットのインクルードに追加（clangdにも反映されやすくする）
 target_include_directories(Clear PRIVATE ${ANTLR4_OUTPUT_DIR})
-
-# antlr4の静的リンクに合わせた定義（Conanのデータに基づく）
 target_compile_definitions(Clear PRIVATE ANTLR4CPP_STATIC)
 
 # compile_commands.json をルートへコピー（VS/Make/Ninja いずれでも、ビルド時に実行可能な専用ターゲットにする）

@@ -24,7 +24,8 @@ class SemaBuilder : public ClearLanguageBaseVisitor {
         std::any visitBlock(ClearLanguageParser::BlockContext* ctx) override;
         std::any visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext* ctx) override;
         std::any visitStmtReturn(ClearLanguageParser::StmtReturnContext* ctx) override;
-
+		std::any visitStringLiteral(ClearLanguageParser::StringLiteralContext* context) override;
+		std::any visitStmtExpr(ClearLanguageParser::StmtExprContext* context) override;
     private:
         TypeRef resolveType(const std::string& name) const;
         TypeRef makeTypeRefFrom(ClearLanguageParser::TypeContext* ctx);

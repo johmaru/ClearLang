@@ -16,6 +16,8 @@ SemaBuilder::SemaBuilder() : mod_(std::make_shared<sema::Module>()) {
     typeScopes_.emplace_back();
     typeScopes_.back().emplace("i8", TypeRef::builtinType(Type{Type::I8}));
     typeScopes_.back().emplace("u8", TypeRef::builtinType(Type{Type::U8}));
+    typeScopes_.back().emplace("i16", TypeRef::builtinType(Type{ Type::I16 }));
+	typeScopes_.back().emplace("u16", TypeRef::builtinType(Type{ Type::U16 }));
     typeScopes_.back().emplace("i32", TypeRef::builtinType(Type{Type::I32}));
     typeScopes_.back().emplace("int", TypeRef::builtinType(Type{Type::I32}));
     typeScopes_.back().emplace("u32", TypeRef::builtinType(Type{Type::U32}));
@@ -24,7 +26,16 @@ SemaBuilder::SemaBuilder() : mod_(std::make_shared<sema::Module>()) {
     typeScopes_.back().emplace("f16", TypeRef::builtinType(Type{Type::F16}));
     typeScopes_.back().emplace("noreturn", TypeRef::builtinType(Type{Type::NORETURN}));
     typeScopes_.back().emplace("unit", TypeRef::builtinType(Type{Type::UNIT}));
+	typeScopes_.back().emplace("()", TypeRef::builtinType(Type{ Type::UNIT }));
+	typeScopes_.back().emplace("string", TypeRef::builtinType(Type{ Type::STRING }));
     varTypes_.emplace_back();
+
+    {
+		auto sig = std::make_shared<FunctionSig>();
+		sig->paramTypes.push_back(TypeRef::builtinType(Type{ Type::STRING }));
+		sig->returnType = std::make_shared<TypeRef>(TypeRef::builtinType(Type{ Type::UNIT }));
+		funcSigs_["__cl_printf"] = sig;
+    }
 }
 
 std::shared_ptr<sema::Module> SemaBuilder::takeModule() { return std::move(mod_); }
@@ -138,6 +149,11 @@ std::any SemaBuilder::visitAddExpr(ClearLanguageParser::AddExprContext* ctx) {
               cur->type.builtin.Kind == rhs->type.builtin.Kind)) {
             throw std::runtime_error("type mismatch in binary op");
         }
+        if (is_string(cur->type) && is_string(rhs->type) ) {
+	        if (op != "+") {
+                throw std::runtime_error("only + operator is supported for string concatenation");
+			}
+        }
         auto bin = std::make_shared<BinOp>();
         bin->op = op;
         bin->lhs = cur;
@@ -184,7 +200,11 @@ std::any SemaBuilder::visitBlock(ClearLanguageParser::BlockContext* ctx) {
             blk->statements.push_back(std::any_cast<std::shared_ptr<StmtReturn>>(visit(sr)));
         } else if (auto* vd = dynamic_cast<ClearLanguageParser::StmtVarDeclContext*>(s)) {
             blk->statements.push_back(std::any_cast<std::shared_ptr<StmtVarDecl>>(visit(vd)));
-        } else {
+        }
+        else if (auto* se = dynamic_cast<ClearLanguageParser::StmtExprContext*>(s)) {
+			blk->statements.push_back(std::any_cast<std::shared_ptr<sema::StmtExpr>>(visit(se)));
+        }
+    	else {
             // currently pass expression statements
             visit(s);
         }
@@ -229,6 +249,14 @@ std::any SemaBuilder::visitStmtReturn(ClearLanguageParser::StmtReturnContext* ct
     }
     return node;
 }
+
+std::any SemaBuilder::visitStmtExpr(ClearLanguageParser::StmtExprContext* ctx)
+{
+	auto node = std::make_shared<sema::StmtExpr>();
+	node->expr = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->expr()));
+	return node;
+}
+
 
 std::any SemaBuilder::visitUnaryPrimary(ClearLanguageParser::UnaryPrimaryContext* ctx) {
     // primary -> int/float/ident/paren/unit
@@ -278,4 +306,40 @@ std::any SemaBuilder::visitUnitLiteral(ClearLanguageParser::UnitLiteralContext* 
     lit->type = TypeRef::builtinType(Type{Type::UNIT});
     lit->value = Value{lit->type, (int64_t)0, false};
     return std::static_pointer_cast<Expr>(lit);
+}
+
+static std::string unescapeStringToken(const std::string& tok) {
+    std::string in = tok;
+    if (in.size() >= 2 && in.front() == '"' && in.back() == '"') {
+        in = in.substr(1, in.size() - 2);
+    }
+    std::string out; out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        if (in[i] == '\\' && i + 1 < in.size()) {
+            switch (char next = in[i + 1]) {
+            case 'b': out.push_back('\b'); break;
+            case 'f': out.push_back('\f'); break;
+            case 'n': out.push_back('\n'); break;
+            case 'r': out.push_back('\r'); break;
+            case 't': out.push_back('\t'); break;
+            case '\\': out.push_back('\\'); break;
+            case '\'': out.push_back('\''); break;
+            case '"': out.push_back('"'); break;
+            default: out.push_back(next); break;
+            }
+            ++i;
+        }
+        else {
+            out.push_back(in[i]);
+        }
+    }
+    return out;
+}
+
+std::any SemaBuilder::visitStringLiteral(ClearLanguageParser::StringLiteralContext* context) {
+	auto node = std::make_shared<Literal>();
+	node->type = TypeRef::builtinType(Type{ Type::STRING });
+	std::string raw = context->STRING()->getText();
+    node->value = make_string(unescapeStringToken(raw));
+	return std::static_pointer_cast<Expr>(node);
 }
