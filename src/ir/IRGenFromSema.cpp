@@ -226,6 +226,61 @@ llvm::Value* IRGenFromSema::emitExpr(const sema::Expr& e) {
 	    for (auto& a : c->args) args.push_back(emitExpr(*a));
 	    return builder_->CreateCall(callee, args);
     }
+    if (auto* cast = dynamic_cast<const sema::Cast*>(&e)) {
+        llvm::Value* v = emitExpr(*cast->inner);
+        const TypeRef& src = cast->inner->type;
+        const TypeRef& dst = cast->targetType;
+
+        if (!src.isBuiltin() || !dst.isBuiltin())
+            throw std::runtime_error("emitCast: non-builtin types are not supported");
+
+        if (src.builtin.Kind == dst.builtin.Kind) return v;
+
+        auto* dstTy = toLlvmType(dst);
+
+        auto is_int_kind = [](Type::KindEnum k) {
+            switch (k) {
+            case Type::I8: case Type::U8:
+            case Type::I16: case Type::U16:
+            case Type::I32: case Type::U32:
+            case Type::I64: case Type::U64:
+                return true;
+            case Type::STRING: case Type::NORETURN: case Type::UNIT: case Type::F16:
+                return false;
+            }
+            return false;
+        };
+
+        if (is_int_kind(src.builtin.Kind) && is_int_kind(dst.builtin.Kind)) {
+            if (!v->getType()->isIntegerTy() || !dstTy->isIntegerTy())
+                throw std::runtime_error("emitCast(int<->int): llvm types not integer");
+
+            auto* srcITy = llvm::cast<llvm::IntegerType>(v->getType());
+            auto* dstITy = llvm::cast<llvm::IntegerType>(dstTy);
+            unsigned sbw = srcITy->getBitWidth();
+            unsigned dbw = dstITy->getBitWidth();
+
+            if (sbw == dbw) {
+                return v;
+            }
+            if (sbw < dbw) {
+	            return src.builtin.isUnsigned()
+		                   ? builder_->CreateZExt(v, dstITy)
+		                   : builder_->CreateSExt(v, dstITy);
+            }
+            return builder_->CreateTrunc(v, dstITy);
+        }
+
+        if (src.builtin.Kind == Type::F16 && is_int_kind(dst.builtin.Kind)) {
+            if (!v->getType()->isHalfTy() || !dstTy->isIntegerTy())
+                throw std::runtime_error("emitCast(f16->int): type mismatch");
+            return dst.builtin.isUnsigned()
+                ? builder_->CreateFPToUI(v, dstTy)
+                : builder_->CreateFPToSI(v, dstTy);
+        }
+
+        throw std::runtime_error("emitCast: unsupported cast");
+    }
     throw std::runtime_error("emitExpr: unsupported node");
 }
 

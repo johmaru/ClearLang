@@ -30,11 +30,31 @@ SemaBuilder::SemaBuilder() : mod_(std::make_shared<sema::Module>()) {
 	typeScopes_.back().emplace("string", TypeRef::builtinType(Type{ Type::STRING }));
     varTypes_.emplace_back();
 
+
+	// Signatures of built-in functions
     {
 		auto sig = std::make_shared<FunctionSig>();
 		sig->paramTypes.push_back(TypeRef::builtinType(Type{ Type::STRING }));
 		sig->returnType = std::make_shared<TypeRef>(TypeRef::builtinType(Type{ Type::UNIT }));
 		funcSigs_["__cl_printf"] = sig;
+    }
+
+    {
+        auto addParse = [&](const char* name, Type::KindEnum k) {
+
+            auto sig = std::make_shared<FunctionSig>();
+            sig->paramTypes.push_back(TypeRef::builtinType(Type{ Type::STRING }));
+			sig->returnType = std::make_shared<TypeRef>(TypeRef::builtinType(Type{ k }));
+			funcSigs_[name] = sig;
+        };
+		addParse("__cl_parse_i8", Type::I8);
+		addParse("__cl_parse_u8", Type::U8);
+		addParse("__cl_parse_i16", Type::I16);
+		addParse("__cl_parse_u16", Type::U16);
+		addParse("__cl_parse_i32", Type::I32);
+		addParse("__cl_parse_u32", Type::U32);
+		addParse("__cl_parse_i64", Type::I64);
+		addParse("__cl_parse_u64", Type::U64);
     }
 }
 
@@ -51,15 +71,17 @@ TypeRef SemaBuilder::resolveType(const std::string& name) const {
 TypeRef SemaBuilder::makeTypeRefFrom(ClearLanguageParser::TypeContext* ctx) {
     if (auto nt = dynamic_cast<ClearLanguageParser::NamedTypeContext*>(ctx)) {
         return TypeRef::builtinType(Type::fromString(nt->IDENT()->getText()));
-    } else if (dynamic_cast<ClearLanguageParser::UnitTypeContext*>(ctx)) {
-        return TypeRef::builtinType(Type{Type::UNIT});
-    } else if (auto ft = dynamic_cast<ClearLanguageParser::FunctionTypeContext*>(ctx)) {
-        auto sig = std::make_shared<FunctionSig>();
-        if (auto tl = ft->typeList()) {
-            for (auto* tctx : tl->type()) sig->paramTypes.push_back(makeTypeRefFrom(tctx));
-        }
-        sig->returnType = std::make_shared<TypeRef>(makeTypeRefFrom(ft->type()));
-        return TypeRef::functionType(std::move(sig));
+    }
+    if (dynamic_cast<ClearLanguageParser::UnitTypeContext*>(ctx)) {
+	    return TypeRef::builtinType(Type{Type::UNIT});
+    }
+    if (auto ft = dynamic_cast<ClearLanguageParser::FunctionTypeContext*>(ctx)) {
+	    auto sig = std::make_shared<FunctionSig>();
+	    if (auto tl = ft->typeList()) {
+		    for (auto* tctx : tl->type()) sig->paramTypes.push_back(makeTypeRefFrom(tctx));
+	    }
+	    sig->returnType = std::make_shared<TypeRef>(makeTypeRefFrom(ft->type()));
+	    return TypeRef::functionType(std::move(sig));
     }
     throw std::runtime_error("unknown type alt");
 }
@@ -190,6 +212,11 @@ std::any SemaBuilder::visitVarRef(ClearLanguageParser::VarRefContext* ctx) {
         auto f = it->find(node->name);
         if (f != it->end()) { node->type = f->second; return std::static_pointer_cast<Expr>(node); }
     }
+
+    if (auto fit = funcSigs_.find(node->name); fit != funcSigs_.end()) {
+        node->type = TypeRef::functionType(fit->second);
+        return std::static_pointer_cast<Expr>(node);
+    }
     throw std::runtime_error("undefined variable: " + node->name);
 }
 
@@ -264,37 +291,197 @@ std::any SemaBuilder::visitUnaryPrimary(ClearLanguageParser::UnaryPrimaryContext
 }
 
 std::any SemaBuilder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext* ctx) {
-    if (!ctx->callSuffix().empty()) {
-        auto* prim = ctx->primary();
-        auto* vctx = dynamic_cast<ClearLanguageParser::VarRefContext*>(prim);
-        if (!vctx) throw std::runtime_error("call on non-ident not supported");
-        auto call = std::make_shared<sema::Call>();
-        call->callee = vctx->IDENT()->getText();
+    auto cur = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->primary()));
 
-        for (auto* cs : ctx->callSuffix()) {
+    auto isIntKind = [](const Type::KindEnum k) {
+        switch (k) {
+        case Type::I8: case Type::U8:
+        case Type::I16: case Type::U16:
+        case Type::I32: case Type::U32:
+        case Type::I64: case Type::U64:
+            return true;
+        case Type::STRING: case Type::F16: case Type::NORETURN: case Type::UNIT:
+            return false;
+        }
+        return false;
+        };
+
+    auto parseFuncFor = [](Type::KindEnum k) -> const char* {
+	    switch (k) {
+			case Type::I8: return "__cl_parse_i8";
+			case Type::U8: return "__cl_parse_u8";
+			case Type::I16: return "__cl_parse_i16";
+			case Type::U16: return "__cl_parse_u16";
+			case Type::I32: return "__cl_parse_i32";
+			case Type::U32: return "__cl_parse_u32";
+			case Type::I64: return "__cl_parse_i64";
+			case Type::U64: return "__cl_parse_u64";
+	    case Type::STRING: case Type::F16: case Type::NORETURN: case Type::UNIT:
+			return nullptr;
+	    }
+		return nullptr;
+    };
+
+    for (auto* child : ctx->children) {
+	    if (auto* cs = dynamic_cast<ClearLanguageParser::CallSuffixContext*>(child)) {
+			auto vr = std::dynamic_pointer_cast<VarRef>(cur);
+			if (!vr) throw std::runtime_error("can only call functions by name");
+
+			auto call = std::make_shared<sema::Call>();
+			call->callee = vr->name;
+
             call->args.clear();
             if (auto al = cs->argList()) {
-                for (auto* ectx : al->expr()) {
+	            for (auto* ectx : al->expr()) {
                     call->args.push_back(std::any_cast<std::shared_ptr<Expr>>(visit(ectx)));
-                }
+				}
             }
-            auto it = funcSigs_.find(call->callee);
-            if (it == funcSigs_.end()) throw std::runtime_error("unknown function: " + call->callee);
-            auto sig = it->second;
-            if (sig->paramTypes.size() != call->args.size()) {
-                throw std::runtime_error("arg count mismatch for function: " + call->callee);
-            }
+
+			auto it = funcSigs_.find(call->callee);
+			if (it == funcSigs_.end()) throw std::runtime_error("call to undefined function: " + call->callee);
+			auto sig = it->second;
+			if (sig->paramTypes.size() != call->args.size()) throw std::runtime_error("argument count mismatch in function call: " + call->callee);
             for (size_t i = 0; i < call->args.size(); ++i) {
                 if (!(call->args[i]->type.isBuiltin() && sig->paramTypes[i].isBuiltin() &&
-                      call->args[i]->type.builtin.Kind == sig->paramTypes[i].builtin.Kind)) {
-                    throw std::runtime_error("arg type mismatch for function: " + call->callee);
+                    call->args[i]->type.builtin.Kind == sig->paramTypes[i].builtin.Kind)) {
+                    throw std::runtime_error("argument type mismatch in function call: " + call->callee);
                 }
             }
-            call->type = *sig->returnType;
+			call->type = *sig->returnType;
+
+            cur = call;
+            continue;
+	    }
+
+        if (auto* as = dynamic_cast<ClearLanguageParser::AsSuffixContext*>(child)) {
+			TypeRef target = makeTypeRefFrom(as->type());
+
+            if (auto lit = std::dynamic_pointer_cast<Literal>(cur)) {
+                if (lit->value.isUntypedInt) {
+                    auto coerced = sema_utils::coerceUntypedIntTo(lit->value, target);
+                    lit->value = coerced;
+                    lit->type = target;
+                    cur->type = target;
+                    continue;
+                }
+            }
+
+            if (!(cur->type.isBuiltin() && target.isBuiltin())) {
+                throw std::runtime_error("can only cast between builtin types");
+			}
+
+			const auto srcK = cur->type.builtin.Kind;
+			const auto dstK = target.builtin.Kind;
+
+			if (srcK == dstK) { cur->type = target; continue; }
+
+			bool ok = false;
+            if (isIntKind(srcK) && isIntKind(dstK)) ok = true;
+			if (isIntKind(srcK) && dstK == Type::F16) ok = true;
+            if (srcK == Type::F16 && isIntKind(dstK)) ok = true;
+
+            if (srcK == Type::STRING || dstK == Type::STRING) ok = false;
+
+            if (!ok) {
+                throw std::runtime_error(
+                    std::string("unsupported 'as' cast: ") +
+                    builtinTypeName(cur->type.builtin) + " -> " + builtinTypeName(target.builtin));
+            }
+
+			auto cast = std::make_shared<sema::Cast>();
+			cast->inner = cur;
+			cast->targetType = target;
+			cast->type = target;
+            cur = cast;
+			continue;
         }
-        return std::static_pointer_cast<Expr>(call);
+
+        if (auto* asf = dynamic_cast<ClearLanguageParser::AsForceSuffixContext*>(child)) {
+	        TypeRef target = makeTypeRefFrom(asf->type());
+            if (auto lit = std::dynamic_pointer_cast<Literal>(cur)) {
+                if (lit->value.isUntypedInt) {
+                    auto coerced = sema_utils::coerceUntypedIntTo(lit->value, target);
+                    lit->value = coerced;
+                    lit->type = target;
+                    cur->type = target;
+                    continue;
+                }
+            }
+            if (!(cur->type.isBuiltin() && target.isBuiltin())) {
+                throw std::runtime_error("can only cast between builtin types");
+            }
+            const auto srcK = cur->type.builtin.Kind;
+            const auto dstK = target.builtin.Kind;
+            if (srcK == dstK) { cur->type = target; continue; }
+
+            if (srcK == Type::STRING && isIntKind(dstK)) {
+	            if (auto lit = std::dynamic_pointer_cast<Literal>(cur)) {
+		            if (std::holds_alternative<std::string>(lit->value.v)) {
+                        const std::string& s = std::get<std::string>(lit->value.v);
+                        auto isDigits = [](const std::string& t) {
+                            if (t.empty()) return false;
+                            size_t i = (t[0] == '+' || t[0] == '-') ? 1u : 0u;
+                            if (i >= t.size())return false;
+                            for (; i < t.size(); ++i) if (!std::isdigit(static_cast<unsigned char>(t[i]))) return false;
+                            return true;
+                        };
+                        if (isDigits(s)) {
+	                        try {
+		                        if (TypeRef::isUnsigned(target)) {
+                                    uint64_t u = static_cast<uint64_t>(std::stoull(s));
+                                    if (!fits(target, std::variant<int64_t, uint64_t>(u)))
+                                        throw std::runtime_error("overflow");
+                                    lit->value = Value{ target, u, false };
+		                        } else {
+                                    int64_t i = static_cast<int64_t>(std::stoll(s));
+                                    if (!fits(target, std::variant<int64_t, uint64_t>(i)))
+                                        throw std::runtime_error("overflow");
+                                    lit->value = Value{ target, i, false };
+		                        }
+                                lit->type = target;
+                                cur->type = target;
+                                continue;
+	                        } catch (...) {
+	                        }
+                        }
+		            }
+	            }
+                const char* callee = parseFuncFor(dstK);
+                if (!callee) {
+                    throw std::runtime_error("string to this target type via 'as! is not supported");
+                }
+                auto call = std::make_shared<sema::Call>();
+                call->callee = callee;
+                call->args.clear();
+                call->args.push_back(cur);
+                call->type = target;
+                cur = call;
+                continue;
+            }
+
+            bool ok = false;
+            if (isIntKind(srcK) && isIntKind(dstK)) ok = true;
+            if (isIntKind(srcK) && dstK == Type::F16) ok = true;
+            if (srcK == Type::F16 && isIntKind(dstK)) ok = true;
+
+            if (srcK == Type::STRING || dstK == Type::STRING) ok = false;
+
+            if (!ok) {
+                throw std::runtime_error(
+                    std::string("unsupported 'as!' cast: ") +
+                    builtinTypeName(cur->type.builtin) + " -> " + builtinTypeName(target.builtin));
+            }
+
+            auto cast = std::make_shared<sema::Cast>();
+            cast->inner = cur;
+            cast->targetType = target;
+            cast->type = target;
+            cur = cast;
+            continue;
+        }
+
     }
-    return visit(ctx->primary());
+	return cur;
 }
 
 std::any SemaBuilder::visitParenExpr(ClearLanguageParser::ParenExprContext* ctx) {

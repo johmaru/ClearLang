@@ -77,7 +77,8 @@ inline float CLHalf::halfBitsToFloat(uint16_t h) {
 }
 
 struct Type {
-    enum Kind { I8, U8, I16, U16, I32, U32, I64, U64, F16, NORETURN, UNIT, STRING } Kind;
+    enum KindEnum { I8, U8, I16, U16, I32, U32, I64, U64, F16, NORETURN, UNIT, STRING };
+    KindEnum Kind;
     bool isUnsigned() const {
         return Kind == U8 || Kind == U16 || Kind == U32 || Kind == U64;
     }

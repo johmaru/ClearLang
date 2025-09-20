@@ -16,6 +16,12 @@ namespace sema {
 
     struct VarRef : Expr { std::string name;};
 
+    struct Cast : Expr {
+        TypeRef targetType;
+        std::shared_ptr<Expr> inner;
+        bool isConst() const override { return inner->isConst(); }
+	};
+
     struct BinOp : Expr {
         std::string op;
         std::shared_ptr<Expr> lhs;

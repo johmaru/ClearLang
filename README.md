@@ -34,6 +34,8 @@ This generates CMake files under `out/conan/build/generators/` and a toolchain f
 
 Debug
 ```powershell
+conan install . -s build_type=Debug -of out/conan/ninja-release -b missing
+cmake --build --preset ninja-debug --target generate_parser
 cmake --preset ninja-debug
 cmake --build --preset ninja-debug
 .\out\build\ninja-debug\Clear.exe --emit-llvm or .\out\build\ninja-debug\Clear.exe --debug-print
@@ -42,6 +44,7 @@ cmake --build --preset ninja-debug
 Release
 ```powershell
 conan install . -s build_type=Release -of out/conan/ninja-release -b missing
+cmake --build --preset ninja-debug --target generate_parser
 cmake --preset ninja-release
 cmake --build --preset ninja-release
 ```
@@ -68,8 +71,8 @@ cmake -S . -B build-ninja -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/build/Release/ge
 
 3. Run ANTLR codegen and copy `compile_commands.json` to repo root
 ```powershell
-cmake --build build-ninja --target generate_parser
-cmake --build build-ninja --target copy_compile_commands
+cmake --build --preset ninja-debug --target generate_parser
+cmake --build --preset ninja-debug --target copy_compile_commands
 ```
 
 After this, clangd will see generated headers under `build-ninja/generated` and flags from `compile_commands.json` in the repo root.

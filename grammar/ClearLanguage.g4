@@ -21,7 +21,15 @@ unaryExpr
     ;
 
 postfixExpr
-    : primary (callSuffix)*
+    : primary (callSuffix | asSuffix | asForceSuffix)*
+    ;
+
+asSuffix
+    : AS type
+    ;
+
+asForceSuffix
+    : ASForce type
     ;
 
 callSuffix
@@ -89,6 +97,8 @@ ASSIGN: '=';
 RETURN: 'return';
 STRING: '"' (ESC_SEQ | ~["\\])* '"';
 fragment ESC_SEQ: '\\' [btnfr"'\\];
+ASForce: 'as!';
+AS: 'as';
 IDENT: [a-zA-Z_][a-zA-Z0-9_]*;
 fragment DIGITS: [0-9]+;
 fragment EXP: [eE] [+-]? DIGITS;

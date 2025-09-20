@@ -1,26 +1,39 @@
 #include <atomic>
 #include <cstdint>
+#include <cstdlib>
+#include <cerrno>
 #include <cstring>
+#include <limits>
 
 static std::atomic<int32_t> g_exitCode{0};
 
-extern "C" void __cl_set_exit_code(int32_t c){ 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX 1
+#endif
+#include <windows.h>
+#define CL_API extern "C" __declspec(dllexport)
+#else
+#include <unistd.h>
+#define CL_API extern "C"
+#endif
+
+CL_API void __cl_set_exit_code(int32_t c) {
     g_exitCode.store(c, std::memory_order_relaxed);
 }
 
-extern "C" int32_t __cl_exit_code(){ 
-    return g_exitCode.load(std::memory_order_relaxed); 
+CL_API int32_t __cl_exit_code() {
+    return g_exitCode.load(std::memory_order_relaxed);
 }
 
 #ifdef _WIN32
-#include <windows.h>
-extern "C" void __cl_set_exit_code_from_win32_last_error() {
+CL_API void __cl_set_exit_code_from_win32_last_error() {
     DWORD err = GetLastError();
     g_exitCode.store(static_cast<int32_t>(err), std::memory_order_relaxed);
 }
 
 
-extern "C" __declspec(dllexport) void __cl_printf(const char* s)
+CL_API void __cl_printf(const char* s)
 {
 	if (!s) return;
     DWORD written = 0;
@@ -30,11 +43,64 @@ extern "C" __declspec(dllexport) void __cl_printf(const char* s)
 	(void)WriteFile(h, s, len, &written, nullptr);
 }
 #else
-#include <unistd.h>
-extern "C" void __cl_printf(const char* s) {
+CL_API void __cl_printf(const char* s) {
 	if (!s) return;
     size_t len = std::strlen(s);
     size_t written = write(STDOUT_FILENO, s, len);
 	(void)written;
 }
 #endif
+
+CL_API char* __cl_string_concat(const char* a, const char* b) {
+    const char* sa = a ? a : "";
+    const char* sb = b ? b : "";
+    size_t la = std::strlen(sa);
+    size_t lb = std::strlen(sb);
+    char* out = static_cast<char*>(std::malloc(la + lb + 1));
+    if (!out) {
+        __cl_set_exit_code(-1);
+        std::abort();
+    }
+    std::memcpy(out, sa, la);
+    std::memcpy(out + la, sb, lb);
+    out[la + lb] = '\0';
+    return out;
+}
+
+[[noreturn]] static void parse_fail() {
+    __cl_set_exit_code(2);
+    std::abort();
+}
+
+template <typename T>
+static T parse_signed(const char* s) {
+    if (!s) parse_fail();
+    errno = 0;
+    char* end = nullptr;
+    long long v = std::strtoll(s, &end, 10);
+    if (errno != 0 || !end || *end != '\0') parse_fail();
+    if (v < static_cast<long long>(std::numeric_limits<T>::min()) ||
+        v > static_cast<long long>(std::numeric_limits<T>::max())) parse_fail();
+    return static_cast<T>(v);
+}
+
+template <typename T>
+static T parse_unsigned(const char* s) {
+    if (!s) parse_fail();
+    if (s[0] == '-') parse_fail();
+    errno = 0;
+    char* end = nullptr;
+    unsigned long long v = std::strtoull(s, &end, 10);
+    if (errno != 0 || !end || *end != '\0') parse_fail();
+    if (v > static_cast<unsigned long long>(std::numeric_limits<T>::max())) parse_fail();
+    return static_cast<T>(v);
+}
+
+CL_API int8_t   __cl_parse_i8(const char* s) { return parse_signed<int8_t>(s); }
+CL_API uint8_t  __cl_parse_u8(const char* s) { return parse_unsigned<uint8_t>(s); }
+CL_API int16_t  __cl_parse_i16(const char* s) { return parse_signed<int16_t>(s); }
+CL_API uint16_t __cl_parse_u16(const char* s) { return parse_unsigned<uint16_t>(s); }
+CL_API int32_t  __cl_parse_i32(const char* s) { return parse_signed<int32_t>(s); }
+CL_API uint32_t __cl_parse_u32(const char* s) { return parse_unsigned<uint32_t>(s); }
+CL_API int64_t  __cl_parse_i64(const char* s) { return parse_signed<int64_t>(s); }
+CL_API uint64_t __cl_parse_u64(const char* s) { return parse_unsigned<uint64_t>(s); }
