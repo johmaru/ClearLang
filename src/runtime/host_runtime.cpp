@@ -42,12 +42,151 @@ CL_API void __cl_printf(const char* s)
 	if (!h || h == INVALID_HANDLE_VALUE) return;
 	(void)WriteFile(h, s, len, &written, nullptr);
 }
+
+CL_API void __cl_i8_printf(int8_t i)
+{
+    char buf[5];
+    char* p = buf;
+
+    int v = static_cast<int>(i);
+    if (v < 0) {
+        *p++ = '-';
+        v = -v;
+    }
+
+    char tmp[3];
+    int idx = 0;
+    do {
+        tmp[idx++] = static_cast<char>('0' + (v % 10));
+        v /= 10;
+    } while (v > 0);
+
+    while (idx > 0) {
+        *p++ = tmp[--idx];
+    }
+
+    const DWORD len = static_cast<DWORD>(p - buf);
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!h || h == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    (void)WriteFile(h, buf, len, &written, nullptr);
+}
+
+CL_API void __cl_i8_printfn(int8_t i) {
+
+    char buf[5];
+    char* p = buf;
+
+    int v = static_cast<int>(i);
+    if (v < 0) {
+        *p++ = '-';
+        v = -v;
+    }
+
+    char tmp[3];
+    int idx = 0;
+    do {
+        tmp[idx++] = static_cast<char>('0' + (v % 10));
+        v /= 10;
+    } while (v > 0);
+
+    while (idx > 0) {
+        *p++ = tmp[--idx];
+    }
+
+    *p++ = '\n';
+
+    const DWORD len = static_cast<DWORD>(p - buf);
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!h || h == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    (void)WriteFile(h, buf, len, &written, nullptr);
+
+}
+
+CL_API void __cl_u8_printfn(uint8_t ui)
+{
+    char buf[4];
+    char* p = buf;
+
+    char tmp[3];
+    int idx = 0;
+
+    do {
+        tmp[idx++] = static_cast<char>('0' + (ui % 10));
+        ui /= 10;
+    } while (ui > 0);
+
+    while (idx > 0) {
+        *p++ = tmp[--idx];
+    }
+
+    *p++ = '\n';
+
+    const DWORD len = static_cast<DWORD>(p - buf);
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!h || h == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    (void)WriteFile(h, buf, len, &written, nullptr);
+}
+
 #else
 CL_API void __cl_printf(const char* s) {
 	if (!s) return;
     size_t len = std::strlen(s);
     size_t written = write(STDOUT_FILENO, s, len);
 	(void)written;
+}
+
+CL_API void __cl_i8_printf(int8_t i)
+{
+    char buf[5];
+    char* p = buf;
+
+    int v = static_cast<int>(i);
+    if (v < 0) {
+        *p++ = '-';
+        v = -v;
+    }
+
+    char tmp[3];
+    int idx = 0;
+    do {
+        tmp[idx++] = static_cast<char>('0' + (v % 10));
+        v /= 10;
+    } while (v > 0);
+
+    while (idx > 0) {
+        *p++ = tmp[--idx];
+    }
+
+    *p++ = '\n';
+
+    const size_t len = static_cast<size_t>(p - buf);
+    size_t written = write(STDOUT_FILENO, buf, len);
+    (void)written;
+}
+
+CL_API void __cl_u8_printfn(uint8_t u)
+{
+    char buf[4];
+    char* p = buf;
+
+    char tmp[3];
+    int idx = 0;
+    do {
+        tmp[idx++] = static_cast<char>('0' + (u % 10));
+        u = static_cast<uint8_t>(u / 10);
+    } while (u > 0);
+
+    while (idx > 0) {
+        *p++ = tmp[--idx];
+    }
+    *p++ = '\n';
+
+    const size_t len = static_cast<size_t>(p - buf);
+    size_t written = write(STDOUT_FILENO, buf, len);
+    (void)written;
 }
 #endif
 

@@ -40,6 +40,27 @@ SemaBuilder::SemaBuilder() : mod_(std::make_shared<sema::Module>()) {
     }
 
     {
+        auto sig = std::make_shared<FunctionSig>();
+        sig->paramTypes.push_back(TypeRef::builtinType(Type{ Type::I8 }));
+        sig->returnType = std::make_shared<TypeRef>(TypeRef::builtinType(Type{ Type::UNIT }));
+        funcSigs_["__cl_i8_printf"] = sig;
+    }
+
+    {
+        auto sig = std::make_shared<FunctionSig>();
+        sig->paramTypes.push_back(TypeRef::builtinType(Type{ Type::I8 }));
+        sig->returnType = std::make_shared<TypeRef>(TypeRef::builtinType(Type{ Type::UNIT }));
+        funcSigs_["__cl_i8_printfn"] = sig;
+    }
+
+    {
+        auto sig = std::make_shared<FunctionSig>();
+        sig->paramTypes.push_back(TypeRef::builtinType(Type{ Type::U8 }));
+        sig->returnType = std::make_shared<TypeRef>(TypeRef::builtinType(Type{ Type::UNIT }));
+        funcSigs_["__cl_u8_printfn"] = sig;
+    }
+
+    {
         auto addParse = [&](const char* name, Type::KindEnum k) {
 
             auto sig = std::make_shared<FunctionSig>();

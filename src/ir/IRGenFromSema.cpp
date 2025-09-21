@@ -69,6 +69,7 @@ void IRGenFromSema::emitEntryShim(const sema::Module& m) {
 
     llvm::Type* retTy = entry->getReturnType();
     if (retTy->isVoidTy()) {
+        builder_->CreateCall(entry, {});
         // unit -> tag=1, len=1
         storeTag(1);
         builder_->CreateRet(llvm::ConstantInt::get(i32Ty, 1));
