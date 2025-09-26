@@ -31,10 +31,10 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
     std::unordered_map<std::string, FunctionDef> functionTable;
 
     static bool isUnit(const TypeRef& t) {
-        return t.isBuiltin() && t.builtin.Kind == Type::UNIT;
+        return t.isBuiltin() && t.builtin.Kind == Type::kind_enum::UNIT;
     }
     static bool isNoReturn(const TypeRef& t) {
-        return t.isBuiltin() && t.builtin.Kind == Type::NORETURN;
+        return t.isBuiltin() && t.builtin.Kind == Type::kind_enum::NORETURN;
     }
 
     static std::string boundsString(const TypeRef& t) {
@@ -63,10 +63,10 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
         if (isUnit(v.type)) throw std::runtime_error("unit value cannot be used in expressions");
         if (!t.isBuiltin()) throw std::runtime_error("numeric range checked on non-builtin: " + typeName(t));
 
-        if (t.builtin.Kind == Type::F16) {
+        if (t.builtin.Kind == Type::kind_enum::F16) {
             float f = 0.0f;
-            if (std::holds_alternative<CLHalf>(v.v)) {
-                f = static_cast<float>(std::get<CLHalf>(v.v));
+            if (std::holds_alternative<cl_half>(v.v)) {
+                f = static_cast<float>(std::get<cl_half>(v.v));
             } else if (std::holds_alternative<int64_t>(v.v)) {
                 f = static_cast<float>(std::get<int64_t>(v.v));
             } else if (std::holds_alternative<uint64_t>(v.v)) {
@@ -75,7 +75,7 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
                 throw std::runtime_error("non-float value cannot be used as a float");
             }
             if (!std::isfinite(f) || f < -65504.0f || f > 65504.0f) {
-                std::string msg = "initializer out of range; allowed range: [-65504.0..65504.0] for type f16";
+                const std::string msg = "initializer out of range; allowed range: [-65504.0..65504.0] for type f16";
                 throw std::runtime_error(msg);
             }
             // Early return for F16 so we don't fall through to integer range checks
@@ -113,11 +113,11 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
     template <typename Op>
     static Value binOp(Value lhs, Value rhs, const std::string& opSym, Op op) {
 
-        if (lhs.type.isBuiltin() && lhs.type.builtin.Kind == Type::NORETURN || rhs.type.isBuiltin() && rhs.type.builtin.Kind == Type::NORETURN) {
+        if (lhs.type.isBuiltin() && lhs.type.builtin.Kind == Type::kind_enum::NORETURN || rhs.type.isBuiltin() && rhs.type.builtin.Kind == Type::kind_enum::NORETURN) {
             throw std::runtime_error("noreturn value cannot be used in expressions");
         }
 
-        if (lhs.type.isBuiltin() && lhs.type.builtin.Kind == Type::UNIT || rhs.type.isBuiltin() && rhs.type.builtin.Kind == Type::UNIT) {
+        if (lhs.type.isBuiltin() && lhs.type.builtin.Kind == Type::kind_enum::UNIT || rhs.type.isBuiltin() && rhs.type.builtin.Kind == Type::kind_enum::UNIT) {
             throw std::runtime_error("unit value cannot be used in expressions");
         }
     
@@ -125,9 +125,9 @@ class EvalVisitor : public ClearLanguageBaseVisitor {
         if (rhs.isUntypedInt && !lhs.isUntypedInt) rhs = coerceUntypedTo(rhs, lhs.type);
 
         if (lhs.isUntypedInt && rhs.isUntypedInt) {
-            lhs = Value{ TypeRef::builtinType(Type{Type::I32}),
+            lhs = Value{ TypeRef::builtinType(Type{Type::kind_enum::I32}),
              std::get<int64_t>(asNum2(lhs)), false };
-            rhs = Value{TypeRef::builtinType(Type{Type::I32}),
+            rhs = Value{TypeRef::builtinType(Type{Type::kind_enum::I32}),
              int64_t{std::get<int64_t>(asNum2(rhs))}, false};
         }
 
@@ -215,16 +215,16 @@ public:
     EvalVisitor() {
         // Initialize type scopes
         pushScopes();
-        typeScopes.back().emplace("i8", TypeRef::builtinType(Type{Type::I8}));
-        typeScopes.back().emplace("u8", TypeRef::builtinType(Type{Type::U8}));
-        typeScopes.back().emplace("i32", TypeRef::builtinType(Type{Type::I32}));
-        typeScopes.back().emplace("int", TypeRef::builtinType(Type{Type::I32}));
-        typeScopes.back().emplace("u32", TypeRef::builtinType(Type{Type::U32}));
-        typeScopes.back().emplace("i64", TypeRef::builtinType(Type{Type::I64}));
-        typeScopes.back().emplace("u64", TypeRef::builtinType(Type{Type::U64}));
-        typeScopes.back().emplace("f16", TypeRef::builtinType(Type{Type::F16}));
-        typeScopes.back().emplace("noreturn", TypeRef::builtinType(Type{Type::NORETURN}));
-        typeScopes.back().emplace("unit", TypeRef::builtinType(Type{Type::UNIT}));
+        typeScopes.back().emplace("i8", TypeRef::builtinType(Type{Type::kind_enum::I8}));
+        typeScopes.back().emplace("u8", TypeRef::builtinType(Type{Type::kind_enum::U8}));
+        typeScopes.back().emplace("i32", TypeRef::builtinType(Type{Type::kind_enum::I32}));
+        typeScopes.back().emplace("int", TypeRef::builtinType(Type{Type::kind_enum::I32}));
+        typeScopes.back().emplace("u32", TypeRef::builtinType(Type{Type::kind_enum::U32}));
+        typeScopes.back().emplace("i64", TypeRef::builtinType(Type{Type::kind_enum::I64}));
+        typeScopes.back().emplace("u64", TypeRef::builtinType(Type{Type::kind_enum::U64}));
+        typeScopes.back().emplace("f16", TypeRef::builtinType(Type{Type::kind_enum::F16}));
+        typeScopes.back().emplace("noreturn", TypeRef::builtinType(Type{Type::kind_enum::NORETURN}));
+        typeScopes.back().emplace("unit", TypeRef::builtinType(Type{Type::kind_enum::UNIT}));
 
         // End initialization type scopes
     }
@@ -253,7 +253,7 @@ public:
             const std::string name = fd->name->getText();
             std::vector<std::string> paramNames;
             std::vector<TypeRef> paramTypes;
-            if (auto pl = fd->paramList()) {
+            if (const auto pl = fd->paramList()) {
                 for (auto* p : pl->param()) {
                    paramNames.push_back(p->IDENT()->getText());
                    paramTypes.push_back(makeTypeRefFrom(p->type()));
@@ -277,12 +277,12 @@ public:
             visit(entry->block());
             // For functions declared as noreturn, reaching the end without a return is valid.
             if (retType.isBuiltin() &&
-                (retType.builtin.Kind == Type::NORETURN || retType.builtin.Kind == Type::UNIT)) {
+                (retType.builtin.Kind == Type::kind_enum::NORETURN || retType.builtin.Kind == Type::kind_enum::UNIT)) {
                 return std::any{};
             }
             throw std::runtime_error("function did not return a value");
         } catch (const ReturnSignal& rs) {
-            if (retType.isBuiltin() && (retType.builtin.Kind == Type::NORETURN || retType.builtin.Kind == Type::UNIT)) {
+            if (retType.isBuiltin() && (retType.builtin.Kind == Type::kind_enum::NORETURN || retType.builtin.Kind == Type::kind_enum::UNIT)) {
                 return std::any{};
             }
             return static_cast<std::any>(asNum2(rs.value));
@@ -290,14 +290,14 @@ public:
     }
 
     TypeRef makeTypeRefFrom(ClearLanguageParser::TypeContext* ctx) {
-        if (auto nt = dynamic_cast<ClearLanguageParser::NamedTypeContext*>(ctx)) {
+        if (const auto nt = dynamic_cast<ClearLanguageParser::NamedTypeContext*>(ctx)) {
             Type bt = Type::fromString(nt->IDENT()->getText());
             return TypeRef::builtinType(bt);
         } else if (auto ut = dynamic_cast<ClearLanguageParser::UnitTypeContext*>(ctx)) {
-            return TypeRef::builtinType(Type{Type::UNIT});
-        } else if (auto ft = dynamic_cast<ClearLanguageParser::FunctionTypeContext*>(ctx)) {
+            return TypeRef::builtinType(Type{Type::kind_enum::UNIT});
+        } else if (const auto ft = dynamic_cast<ClearLanguageParser::FunctionTypeContext*>(ctx)) {
             auto sig = std::make_shared<FunctionSig>();
-            if (auto tl = ft->typeList()) {
+            if (const auto tl = ft->typeList()) {
                 for (auto* tctx : tl->type()) {
                     sig->paramTypes.push_back(makeTypeRefFrom(tctx));
                 }
@@ -309,7 +309,7 @@ public:
     }
 
     std::any visitUnitLiteral(ClearLanguageParser::UnitLiteralContext* ctx) override {
-        return Value{ TypeRef::builtinType(Type{Type::UNIT}), std::monostate{}, false };
+        return Value{ TypeRef::builtinType(Type{Type::kind_enum::UNIT}), std::monostate{}, false };
     }
 
     std::any visitStmtReturn(ClearLanguageParser::StmtReturnContext* ctx) override {
@@ -323,14 +323,14 @@ public:
 
         if (isUnit(*currentFuncReturnType)) {
             if (!ctx->expr()) {
-                throw ReturnSignal{false, {TypeRef::builtinType(Type{Type::UNIT}), std::monostate{}, false}};
+                throw ReturnSignal{false, {TypeRef::builtinType(Type{Type::kind_enum::UNIT}), std::monostate{}, false}};
             }
             auto oldExpected = expectedType;
             expectedType = currentFuncReturnType;
             Value v = std::any_cast<Value>(visit(ctx->expr()));
             expectedType = oldExpected;
 
-            if (v.type.isBuiltin() && v.type.builtin.Kind != Type::UNIT) {
+            if (v.type.isBuiltin() && v.type.builtin.Kind != Type::kind_enum::UNIT) {
                 throw std::runtime_error(std::string("return type mismatch: expected unit, got ") + typeName(v.type));
             }
             throw ReturnSignal{false, v};
@@ -456,7 +456,7 @@ public:
         const size_t childCount = ctx->children.size();
         for (size_t i = 1; i < childCount && nextMulIndex < ctx->mulExpr().size(); ++i) {
             auto* child = ctx->children[i]; // ← getChild(i) ではなく children[i]
-            if (auto* tn = dynamic_cast<antlr4::tree::TerminalNode*>(child)) {
+            if (const auto* tn = dynamic_cast<antlr4::tree::TerminalNode*>(child)) {
                 const std::string op = tn->getSymbol()->getText(); // "+" or "-"
                 Value rhs = std::any_cast<Value>(visit(ctx->mulExpr(nextMulIndex++)));
                 if (op == "+"){
@@ -476,12 +476,12 @@ public:
         const size_t childCount = ctx->children.size();
         for (size_t i = 1; i < childCount && nextUnaryIndex < ctx->unaryExpr().size(); ++i) {
             auto* child = ctx->children[i]; // ← getChild(i) ではなく children[i]
-            if (auto* tn = dynamic_cast<antlr4::tree::TerminalNode*>(child)) {
+            if (const auto* tn = dynamic_cast<antlr4::tree::TerminalNode*>(child)) {
                 const std::string op = tn->getSymbol()->getText(); // "*" or "/"
                 Value rhs = std::any_cast<Value>(visit(ctx->unaryExpr(nextUnaryIndex++)));
                 if (op == "*") value = binOp(value, rhs, "*", [](auto a, auto b) { return a * b; });
                 else if (op == "/") {
-                    bool isZero = (std::holds_alternative<int64_t>(rhs.v)
+                    const bool isZero = (std::holds_alternative<int64_t>(rhs.v)
                                   ? (std::get<int64_t>(rhs.v) == 0)
                                   : (std::get<uint64_t>(rhs.v) == 0));
                     if (isZero) throw std::runtime_error("division by zero");
@@ -508,20 +508,20 @@ public:
             int64_t s = -(std::holds_alternative<int64_t>(inner.v)
                          ? std::get<int64_t>(inner.v)
                          : static_cast<int64_t>(std::get<uint64_t>(inner.v)));
-            return Value{TypeRef::builtinType(Type{Type::I32}), s, false};
+            return Value{TypeRef::builtinType(Type{Type::kind_enum::I32}), s, false};
         }
         
-        if (inner.type.isBuiltin() && inner.type.builtin.Kind == Type::U8) {
+        if (inner.type.isBuiltin() && inner.type.builtin.Kind == Type::kind_enum::U8) {
             // Now unsupported UnaryMinus for U8
             throw std::runtime_error("type mismatch: cannot negate unsigned type");
         }
 
-        if (inner.type.isBuiltin() && inner.type.builtin.Kind == Type::F16) {
-            if (!std::holds_alternative<CLHalf>(inner.v)) {
+        if (inner.type.isBuiltin() && inner.type.builtin.Kind == Type::kind_enum::F16) {
+            if (!std::holds_alternative<cl_half>(inner.v)) {
                 throw std::runtime_error("type mismatch: expected f16 value");
             }
-            CLHalf f = std::get<CLHalf>(inner.v);
-            CLHalf res;
+            cl_half f = std::get<cl_half>(inner.v);
+            cl_half res;
             res.bits = static_cast<uint16_t>(f.bits ^ 0x8000u);
             return Value{inner.type, res, false};
         }
@@ -536,19 +536,19 @@ public:
     std::any visitPostfixExpr(ClearLanguageParser::PostfixExprContext* ctx) override {
 
         std::string identName;
-        if (auto vr = dynamic_cast<ClearLanguageParser::VarRefContext*>(ctx->primary())) {
+        if (const auto vr = dynamic_cast<ClearLanguageParser::VarRefContext*>(ctx->primary())) {
             identName = vr->IDENT()->getText();
         }
 
         if (!ctx->callSuffix().empty()) {
             if (!identName.empty()) {
                 auto tryCallByName = [&](const std::string& ident, ClearLanguageParser::CallSuffixContext* cs) -> Value {
-                    auto it = functionTable.find(ident);
+                    const auto it = functionTable.find(ident);
                     if (it == functionTable.end()) {
                         throw std::runtime_error("undefined function: " + ident);
                     }
                     std::vector<Value> args;
-                    if (auto al = cs->argList()) {
+                    if (const auto al = cs->argList()) {
                         const auto& defRef = it->second;
                         const auto& paramTs = defRef.fv.sig->paramTypes;
 
@@ -593,27 +593,27 @@ public:
         }
         float f = std::stof(txt);
         if (expectedType.has_value()) {
-            if (expectedType->isBuiltin() && expectedType->builtin.Kind == Type::F16) {
+            if (expectedType->isBuiltin() && expectedType->builtin.Kind == Type::kind_enum::F16) {
                 if (!std::isfinite(f) || f < -65504.0f || f > 65504.0f) {
-                    std::string msg = std::string("initializer out of range: ") + txt + "; allowed range: [-65504.0..65504.0] for type f16";
+                    const std::string msg = std::string("initializer out of range: ") + txt + "; allowed range: [-65504.0..65504.0] for type f16";
                     throw std::runtime_error(msg);
                 }
-                return Value{*expectedType, CLHalf{f}, false};
+                return Value{*expectedType, cl_half{f}, false};
             } else {
                 throw std::runtime_error("only f16 type is supported for float literals");
             }
         }
         // Default to f16 if no expected type
         if (!std::isfinite(f) || f < -65504.0f || f > 65504.0f) {
-            std::string msg = std::string("initializer out of range: ") + txt + "; allowed range: [-65504.0..65504.0] for type f16";
+            const std::string msg = std::string("initializer out of range: ") + txt + "; allowed range: [-65504.0..65504.0] for type f16";
             throw std::runtime_error(msg);
         }
-        return Value{TypeRef::builtinType(Type{Type::F16}), CLHalf{f}, false};
+        return Value{TypeRef::builtinType(Type{Type::kind_enum::F16}), cl_half{f}, false};
     }
 
    std::any visitIntLiteral(ClearLanguageParser::IntLiteralContext* ctx) override {
         const std::string txt = ctx->INT()->getText();
-        if (expectedType && isUnit(*expectedType)) { int64_t v = stoll(txt); return Value{TypeRef::builtinType(Type{Type::I32}), v, true}; }
+        if (expectedType && isUnit(*expectedType)) { int64_t v = stoll(txt); return Value{TypeRef::builtinType(Type{Type::kind_enum::I32}), v, true}; }
 
         if (expectedType.has_value()) {
             if (expectedType->builtin.isUnsigned()) {
@@ -623,9 +623,9 @@ public:
                 return val;
             } else {
                 // parse as unsigned first to avoid std::stoll overflow, then check/cast
-                uint64_t uv = static_cast<uint64_t>(std::stoull(txt));
+                const uint64_t uv = static_cast<uint64_t>(std::stoull(txt));
                 if (uv > static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())) {
-                    std::string msg = std::string("initializer out of range: ") + txt + "; allowed range: " + boundsString(*expectedType) + " for type " + typeName(*expectedType);
+                    const std::string msg = std::string("initializer out of range: ") + txt + "; allowed range: " + boundsString(*expectedType) + " for type " + typeName(*expectedType);
                     throw std::runtime_error(msg);
                 }
                 int64_t sv = static_cast<int64_t>(uv);
@@ -635,7 +635,7 @@ public:
             }
         }
         int64_t v = static_cast<int64_t>(std::stoll(txt));
-        return Value{TypeRef::builtinType(Type{Type::I32}), v, true};
+        return Value{TypeRef::builtinType(Type{Type::kind_enum::I32}), v, true};
     }
 
     std::any visitParenExpr(ClearLanguageParser::ParenExprContext* ctx) override {
@@ -643,7 +643,7 @@ public:
     }
 
     static bool isUnsigned(const Type& t){
-        return t.Kind == Type::U8 || t.Kind == Type::U32 || t.Kind == Type::U64;
+        return t.Kind == Type::kind_enum::U8 || t.Kind == Type::kind_enum::U32 || t.Kind == Type::kind_enum::U64;
     }
 
     static void normalizeValueStorage(Value& val){
@@ -687,7 +687,7 @@ private:
             if (arg.isUntypedInt) {
                 arg = coerceUntypedTo(arg, pt);
             } else if (arg.type.builtin.Kind != pt.builtin.Kind) {
-                std::string msg = "argument type mismatch at #" + std::to_string(i)
+                const std::string msg = "argument type mismatch at #" + std::to_string(i)
                                 + ": expected " + typeName(tr)
                                 + ", got " + typeName(arg.type);
                 throw std::runtime_error(msg);
@@ -708,7 +708,7 @@ private:
             currentFuncReturnType = saved;
 
             if (isUnit(retTy) || isNoReturn(retTy)) {
-                return Value{ TypeRef::builtinType(Type{Type::UNIT}), std::monostate{}, false };
+                return Value{ TypeRef::builtinType(Type{Type::kind_enum::UNIT}), std::monostate{}, false };
             }
             throw std::runtime_error("function did not return a value");
         } catch (const ReturnSignal& rs) {
@@ -716,7 +716,7 @@ private:
             currentFuncReturnType = saved;
 
             if (!rs.hasValue || isUnit(rs.value.type) || isNoReturn(rs.value.type)) {
-                return Value{ TypeRef::builtinType(Type{Type::UNIT}), std::monostate{}, false };
+                return Value{ TypeRef::builtinType(Type{Type::kind_enum::UNIT}), std::monostate{}, false };
             }
             return rs.value;
         }

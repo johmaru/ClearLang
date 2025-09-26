@@ -5,18 +5,12 @@
 
 namespace sema_utils {
 
-inline void checkF16Range(float f) {
-    if (!std::isfinite(f) || f < -65504.0f || f > 65504.0f) {
-        throw std::runtime_error("initializer out of range; allowed range: [-65504.0..65504.0] for type f16");
-    }
-}
-
-inline void normalizeValueStorage(Value& val) {
+inline void normalize_value_storage(value& val) {
     const auto& t = val.type;
-    auto unsignedKind = [](const Type& bt){
-        return bt.Kind == Type::U8 || bt.Kind == Type::U32 || bt.Kind == Type::U64;
+    auto unsigned_kind = [](const type& bt){
+        return bt.kind == type::kind_enum::u8 || bt.kind == type::kind_enum::u32 || bt.kind == type::kind_enum::u64;
     };
-    if (t.isBuiltin() && unsignedKind(t.builtin)) {
+    if (t.is_builtin() && unsigned_kind(t.builtin)) {
         if (std::holds_alternative<int64_t>(val.v))
             val.v = static_cast<uint64_t>(std::get<int64_t>(val.v));
     } else {
@@ -25,13 +19,13 @@ inline void normalizeValueStorage(Value& val) {
     }
 }
 
-inline Value coerceUntypedIntTo(const Value& in, const TypeRef& target) {
-    if (!target.isBuiltin()) throw std::runtime_error("cannot coerce to non-builtin");
-    if (target.builtin.Kind == Type::UNIT || target.builtin.Kind == Type::NORETURN)
+inline value coerce_untyped_int_to(const value& in, const type_ref& target) {
+    if (!target.is_builtin()) throw std::runtime_error("cannot coerce to non-builtin");
+    if (target.builtin.kind == type::kind_enum::unit || target.builtin.kind == type::kind_enum::noreturn)
         throw std::runtime_error("cannot coerce to unit/noreturn");
 
-    Value out{target, std::monostate{}, false};
-    if (target.builtin.isUnsigned()) {
+    value out{target, std::monostate{}, false};
+    if (target.builtin.is_unsigned()) {
         uint64_t u = std::holds_alternative<uint64_t>(in.v)
             ? std::get<uint64_t>(in.v)
             : static_cast<uint64_t>(std::get<int64_t>(in.v));
@@ -42,10 +36,10 @@ inline Value coerceUntypedIntTo(const Value& in, const TypeRef& target) {
             : static_cast<int64_t>(std::get<uint64_t>(in.v));
         out.v = s;
     }
-    auto nv = asNum2(out);
+    auto nv = as_num2(out);
     if (!fits(target, nv)) {
         std::string msg = "initializer out of range for type ";
-        msg += typeName(target);
+        msg += type_name(target);
         throw std::runtime_error(msg);
     }
     return out;

@@ -1,9 +1,5 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 21
-  },
   "configurePresets": [
     {
       "name": "ninja-debug",
@@ -13,8 +9,8 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/wrap_conan_toolchain.cmake",
-        "CMAKE_GENERATOR_TOOLSET": "",
-        "CMAKE_CXX_STANDARD": "23"
+        "CONAN_OUT_ROOT": "${sourceDir}/out/conan/ninja-debug",
+        "CMAKE_GENERATOR_TOOLSET": ""
       },
       "environment": {
         "Platform": "",
@@ -30,8 +26,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/wrap_conan_toolchain.cmake",
-        "CMAKE_GENERATOR_TOOLSET": "",
-        "CMAKE_CXX_STANDARD": "23"
+        "CONAN_OUT_ROOT": "${sourceDir}/out/conan/ninja-release",
+        "CMAKE_GENERATOR_TOOLSET": ""
       },
       "environment": {
         "Platform": "",

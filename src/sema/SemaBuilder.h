@@ -4,11 +4,11 @@
 #include "SemaIR.h"
 #include <memory>
 
-class SemaBuilder : public ClearLanguageBaseVisitor {
+class sema_builder : public ClearLanguageBaseVisitor {
     public :
-        SemaBuilder();
+        sema_builder();
 
-        std::shared_ptr<sema::Module> takeModule();
+        std::shared_ptr<sema::module> take_module();
 
         std::any visitStart(ClearLanguageParser::StartContext* ctx) override;
         std::any visitIntLiteral(ClearLanguageParser::IntLiteralContext* ctx) override;
@@ -27,14 +27,14 @@ class SemaBuilder : public ClearLanguageBaseVisitor {
 		std::any visitStringLiteral(ClearLanguageParser::StringLiteralContext* context) override;
 		std::any visitStmtExpr(ClearLanguageParser::StmtExprContext* context) override;
     private:
-        TypeRef resolveType(const std::string& name) const;
-        TypeRef makeTypeRefFrom(ClearLanguageParser::TypeContext* ctx);
+        type_ref resolve_type(const std::string& name) const;
+        static type_ref make_type_ref_from(ClearLanguageParser::TypeContext* ctx);
 
-        std::shared_ptr<sema::Module> mod_;
+        std::shared_ptr<sema::module> mod_;
 
-        std::vector<std::unordered_map<std::string, TypeRef>> typeScopes_;
-        std::vector<std::unordered_map<std::string, TypeRef>> varTypes_;
+        std::vector<std::unordered_map<std::string, type_ref>> type_scopes_;
+        std::vector<std::unordered_map<std::string, type_ref>> var_types_;
 
-        std::unordered_map<std::string, std::shared_ptr<FunctionSig>> funcSigs_;
-        TypeRef currentReturnType_ = TypeRef::builtinType(Type{Type::UNIT});
+        std::unordered_map<std::string, std::shared_ptr<function_sig>> func_sigs_;
+        type_ref current_return_type_ = type_ref::builtin_type(type{type::kind_enum::unit});
 };

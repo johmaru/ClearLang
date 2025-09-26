@@ -1,4 +1,4 @@
-Project tree snapshot (2025-09-21)
+Project tree snapshot (2025-09-26)
 
 Top-level directories:
 - .cache
@@ -24,14 +24,13 @@ Top-level files:
 - compile_commands.json
 - conanfile.txt
 - Folder.DotSettings
+- main.clr
 - README.md
 
 Key source files (src):
 - src\ast\CLVisitor.cpp
 - src\core\CLType.h
 - src\core\SemaUtils.h
-- src\helper\ValueBuilder.cpp
-- src\helper\ValueBuilder.h
 - src\ir\IRGenFromSema.cpp
 - src\ir\IRGenFromSema.h
 - src\ir\IRGenVisitor.cpp

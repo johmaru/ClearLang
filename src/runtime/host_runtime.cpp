@@ -4,8 +4,9 @@
 #include <cerrno>
 #include <cstring>
 #include <limits>
+#include <cstdio>
 
-static std::atomic<int32_t> g_exitCode{0};
+static std::atomic<int32_t> g_exit_code{0};
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -18,18 +19,18 @@ static std::atomic<int32_t> g_exitCode{0};
 #define CL_API extern "C"
 #endif
 
-CL_API void __cl_set_exit_code(int32_t c) {
-    g_exitCode.store(c, std::memory_order_relaxed);
+CL_API void __cl_set_exit_code(const int32_t c) {
+    g_exit_code.store(c, std::memory_order_relaxed);
 }
 
 CL_API int32_t __cl_exit_code() {
-    return g_exitCode.load(std::memory_order_relaxed);
+    return g_exit_code.load(std::memory_order_relaxed);
 }
 
 #ifdef _WIN32
 CL_API void __cl_set_exit_code_from_win32_last_error() {
-    DWORD err = GetLastError();
-    g_exitCode.store(static_cast<int32_t>(err), std::memory_order_relaxed);
+    const DWORD err = GetLastError();
+    g_exit_code.store(static_cast<int32_t>(err), std::memory_order_relaxed);
 }
 
 
@@ -38,12 +39,12 @@ CL_API void __cl_printf(const char* s)
 	if (!s) return;
     DWORD written = 0;
     const DWORD len = static_cast<DWORD>(std::strlen(s));
-	HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+	const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
 	if (!h || h == INVALID_HANDLE_VALUE) return;
 	(void)WriteFile(h, s, len, &written, nullptr);
 }
 
-CL_API void __cl_i8_printf(int8_t i)
+CL_API void __cl_i8_printf(const int8_t i)
 {
     char buf[5];
     char* p = buf;
@@ -66,13 +67,13 @@ CL_API void __cl_i8_printf(int8_t i)
     }
 
     const DWORD len = static_cast<DWORD>(p - buf);
-    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!h || h == INVALID_HANDLE_VALUE) return;
     DWORD written = 0;
     (void)WriteFile(h, buf, len, &written, nullptr);
 }
 
-CL_API void __cl_i8_printfn(int8_t i) {
+CL_API void __cl_i8_printfn(const int8_t i) {
 
     char buf[5];
     char* p = buf;
@@ -97,7 +98,7 @@ CL_API void __cl_i8_printfn(int8_t i) {
     *p++ = '\n';
 
     const DWORD len = static_cast<DWORD>(p - buf);
-    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!h || h == INVALID_HANDLE_VALUE) return;
     DWORD written = 0;
     (void)WriteFile(h, buf, len, &written, nullptr);
@@ -124,10 +125,52 @@ CL_API void __cl_u8_printfn(uint8_t ui)
     *p++ = '\n';
 
     const DWORD len = static_cast<DWORD>(p - buf);
-    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!h || h == INVALID_HANDLE_VALUE) return;
     DWORD written = 0;
     (void)WriteFile(h, buf, len, &written, nullptr);
+}
+
+CL_API void __cl_i16_printfn(const int16_t i) {
+
+    char buf[7];
+    char* p = buf;
+
+    int v = static_cast<int>(i);
+    if (v < 0) {
+        *p++ = '-';
+        v = -v;
+    }
+
+    char tmp[6];
+    int idx = 0;
+    do {
+        tmp[idx++] = static_cast<char>('0' + (v % 10));
+        v /= 10;
+    } while (v > 0);
+
+    while (idx > 0) {
+        *p++ = tmp[--idx];
+    }
+
+    *p++ = '\n';
+
+    const DWORD len = static_cast<DWORD>(p - buf);
+    const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!h || h == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    (void)WriteFile(h, buf, len, &written, nullptr);
+}
+
+CL_API void __cl_f16_printfn(float f) {
+    char buf[64];
+    const int len = std::snprintf(buf, sizeof(buf), "%.5g\n", static_cast<double>(f));
+    if (len < 0) return;
+
+    const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!h || h == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    (void)WriteFile(h, buf, static_cast<DWORD>(len), &written, nullptr);
 }
 
 #else
@@ -193,8 +236,8 @@ CL_API void __cl_u8_printfn(uint8_t u)
 CL_API char* __cl_string_concat(const char* a, const char* b) {
     const char* sa = a ? a : "";
     const char* sb = b ? b : "";
-    size_t la = std::strlen(sa);
-    size_t lb = std::strlen(sb);
+    const size_t la = std::strlen(sa);
+    const size_t lb = std::strlen(sb);
     char* out = static_cast<char*>(std::malloc(la + lb + 1));
     if (!out) {
         __cl_set_exit_code(-1);

@@ -5,130 +5,131 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/GlobalVariable.h>
 
-IRGenFromSema::IRGenFromSema(llvm::LLVMContext& ctx, std::string moduleName)
+ir_gen_from_sema::ir_gen_from_sema(llvm::LLVMContext& ctx, std::string module_name)
   : ctx_(ctx),
-    mod_(std::make_unique<llvm::Module>(std::move(moduleName), ctx_)),
+    mod_(std::make_unique<llvm::Module>(std::move(module_name), ctx_)),
     builder_(std::make_unique<llvm::IRBuilder<>>(ctx_)) {}
 
-llvm::Module& IRGenFromSema::module() { return *mod_; }
+llvm::Module& ir_gen_from_sema::module() const { return *mod_; }
 
-void IRGenFromSema::emitModule(const sema::Module& m) {
+void ir_gen_from_sema::emit_module(const sema::module& m) {
     // Predeclare all functions with proper signatures
     for (auto& f : m.functions) {
-        std::vector<llvm::Type*> paramTys;
-        for (auto& p : f->params) paramTys.push_back(toLlvmType(p.type));
-        auto* retTy = toLlvmType(f->returnType);
-        auto* fnTy = llvm::FunctionType::get(retTy, paramTys, false);
-        (void)mod_->getOrInsertFunction(f->name, fnTy);
+        std::vector<llvm::Type*> param_tys;
+        for (auto& p : f->params) param_tys.push_back(to_llvm_type(p.type));
+        auto* ret_ty = to_llvm_type(f->return_type);
+        auto* fn_ty = llvm::FunctionType::get(ret_ty, param_tys, false);
+        (void)mod_->getOrInsertFunction(f->name, fn_ty);
     }
     // Then emit bodies
-    for (auto& f : m.functions) emitFunction(*f);
-    emitEntryShim(m);
+    for (auto& f : m.functions) emit_function(*f);
+    emit_entry_shim(m);
     
     // Exit code
     if (!mod_->getFunction("__cl_exit_code")) {
-        auto* i32Ty = llvm::Type::getInt32Ty(ctx_);
-        auto* ft = llvm::FunctionType::get(i32Ty, {}, false);
+        auto* i32_ty = llvm::Type::getInt32Ty(ctx_);
+        auto* ft = llvm::FunctionType::get(i32_ty, {}, false);
         auto* fn = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "__cl_exit_code", mod_.get());
         auto* bb = llvm::BasicBlock::Create(ctx_, "entry", fn);
         builder_->SetInsertPoint(bb);
-        builder_->CreateRet(llvm::ConstantInt::get(i32Ty, 0));
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 0));
     }
 }
 
-std::unique_ptr<llvm::Module> IRGenFromSema::takeModule() {
+std::unique_ptr<llvm::Module> ir_gen_from_sema::take_module() {
     return std::move(mod_);
 }
 
-void IRGenFromSema::emitEntryShim(const sema::Module& m) {
-    if (m.entryName.empty()) return; // no entry point
-    llvm::Function* entry = mod_->getFunction(m.entryName);
+void ir_gen_from_sema::emit_entry_shim(const sema::module& m) const {
+    if (m.entry_name.empty()) return; // no entry point
+    llvm::Function* entry = mod_->getFunction(m.entry_name);
     if (!entry) return;
     if (entry->arg_size() != 0) return;
 
-    auto& C = ctx_;
-    auto* i8Ty = llvm::Type::getInt8Ty(C);
-    auto* i16Ty = llvm::Type::getInt16Ty(C);
-    auto* i32Ty = llvm::Type::getInt32Ty(C);
-    auto* i8PtrTy = llvm::Type::getInt8Ty(C)->getPointerTo();
+    auto& c = ctx_;
+    auto* i8_ty = llvm::Type::getInt8Ty(c);
+    auto* i16_ty = llvm::Type::getInt16Ty(c);
+    auto* i32_ty = llvm::Type::getInt32Ty(c);
+    auto* i8_ptr_ty = llvm::Type::getInt8Ty(c)->getPointerTo();
 
-    auto* ft = llvm::FunctionType::get(i32Ty, {i8PtrTy, i32Ty}, false);
+    auto* ft = llvm::FunctionType::get(i32_ty, {i8_ptr_ty, i32_ty}, false);
     auto* fn = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "__cl_entry", mod_.get());
-    auto* bb = llvm::BasicBlock::Create(C, "entry", fn);
+    auto* bb = llvm::BasicBlock::Create(c, "entry", fn);
     builder_->SetInsertPoint(bb);
 
     auto ai = fn->arg_begin();
     llvm::Value* out = ai++;
-    llvm::Value* cap = ai; (void)cap;
+    const llvm::Value* cap = ai; (void)cap;
 
-    auto storeTag = [&](uint8_t tag) {
-        builder_->CreateStore(llvm::ConstantInt::get(i8Ty, tag), out);
+    auto store_tag = [&](const uint8_t tag) {
+        builder_->CreateStore(llvm::ConstantInt::get(i8_ty, tag), out);
     };
 
-    auto* dataPtr = builder_->CreateGEP(i8Ty, out, llvm::ConstantInt::get(i32Ty, 1));
+    auto* data_ptr = builder_->CreateGEP(i8_ty, out, llvm::ConstantInt::get(i32_ty, 1));
 
-    llvm::Type* retTy = entry->getReturnType();
-    if (retTy->isVoidTy()) {
+    const llvm::Type* ret_ty = entry->getReturnType();
+    if (ret_ty->isVoidTy()) {
         builder_->CreateCall(entry, {});
         // unit -> tag=1, len=1
-        storeTag(1);
-        builder_->CreateRet(llvm::ConstantInt::get(i32Ty, 1));
+        store_tag(1);
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 1));
         return;
     }
-    if (retTy->isIntegerTy(8)){
+    if (ret_ty->isIntegerTy(8)){
 	    llvm::Value* v = builder_->CreateCall(entry, {});
-	    storeTag(2);
-	    auto* p8 = builder_->CreateBitCast(dataPtr, i8Ty->getPointerTo());
+	    store_tag(2);
+	    auto* p8 = builder_->CreateBitCast(data_ptr, i8_ty->getPointerTo());
 	    builder_->CreateStore(v, p8);
-	    builder_->CreateRet(llvm::ConstantInt::get(i32Ty, 2)); // 1(tag) + 1 (data)
+	    builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 2)); // 1(tag) + 1 (data)
 	    return;
     }
-    if (retTy->isIntegerTy(16)){
+    if (ret_ty->isIntegerTy(16)){
         llvm::Value* v = builder_->CreateCall(entry, {});
-        storeTag(3);
-        auto* p16 = builder_->CreateBitCast(dataPtr, i16Ty->getPointerTo());
+        store_tag(3);
+        auto* p16 = builder_->CreateBitCast(data_ptr, i16_ty->getPointerTo());
         builder_->CreateStore(v, p16);
-        builder_->CreateRet(llvm::ConstantInt::get(i32Ty, 3)); // 1(tag) + 2 (data)
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 3)); // 1(tag) + 2 (data)
         return;
 	}
-    if (retTy->isIntegerTy(32)){
+    if (ret_ty->isIntegerTy(32)){
 	    llvm::Value* v = builder_->CreateCall(entry, {});
-	    storeTag(4);
-	    auto* p32 = builder_->CreateBitCast(dataPtr, i32Ty->getPointerTo());
+	    store_tag(4);
+	    auto* p32 = builder_->CreateBitCast(data_ptr, i32_ty->getPointerTo());
 	    builder_->CreateStore(v, p32);
-	    builder_->CreateRet(llvm::ConstantInt::get(i32Ty, 5)); // 1(tag) + 4 (data)
+	    builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 5)); // 1(tag) + 4 (data)
 	    return;
     }
-    if (retTy->isIntegerTy(64)){
+    if (ret_ty->isIntegerTy(64)){
 	    llvm::Value* v = builder_->CreateCall(entry, {});
-	    storeTag(5);
-	    auto* p64 = builder_->CreateBitCast(dataPtr, llvm::Type::getInt64Ty(C)->getPointerTo());
+	    store_tag(5);
+	    auto* p64 = builder_->CreateBitCast(data_ptr, llvm::Type::getInt64Ty(c)->getPointerTo());
 	    builder_->CreateStore(v, p64);
-	    builder_->CreateRet(llvm::ConstantInt::get(i32Ty, 9)); // 1(tag) + 8 (data)
+	    builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 9)); // 1(tag) + 8 (data)
 	    return;
     }
-    if (retTy->isHalfTy()) {
+    if (ret_ty->isHalfTy()) {
 	    llvm::Value* h = builder_->CreateCall(entry, {});
-	    llvm::Value* bits = builder_->CreateBitCast(h, i16Ty);
-	    storeTag(6);
-	    auto* p16 = builder_->CreateBitCast(dataPtr, i16Ty->getPointerTo());
+	    llvm::Value* bits = builder_->CreateBitCast(h, i16_ty);
+	    store_tag(6);
+	    auto* p16 = builder_->CreateBitCast(data_ptr, i16_ty->getPointerTo());
 	    builder_->CreateStore(bits, p16);
-	    builder_->CreateRet(llvm::ConstantInt::get(i32Ty, 3)); // 1(tag) + 2 (data)
+	    builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 3)); // 1(tag) + 2 (data)
 	    return;
     }
-    builder_->CreateRet(llvm::ConstantInt::get(i32Ty, 0));
+    builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 0));
 }
 
-llvm::Function* IRGenFromSema::emitFunction(const sema::Function& f) {
-    std::vector<llvm::Type*> paramTys;
-    for (auto& p : f.params) paramTys.push_back(toLlvmType(p.type));
-    auto* retTy = toLlvmType(f.returnType);
-    auto* fnTy = llvm::FunctionType::get(retTy, paramTys, false);
+llvm::Function* ir_gen_from_sema::emit_function(const sema::function& f) {
+    std::vector<llvm::Type*> param_tys;
+    param_tys.reserve(f.params.size());
+    for (auto& p : f.params) param_tys.push_back(to_llvm_type(p.type));
+    auto* ret_ty = to_llvm_type(f.return_type);
+    auto* fn_ty = llvm::FunctionType::get(ret_ty, param_tys, false);
 
     // Reuse predeclared function if available
     llvm::Function* fn = mod_->getFunction(f.name);
     if (!fn) {
-        auto callee = mod_->getOrInsertFunction(f.name, fnTy);
+        auto callee = mod_->getOrInsertFunction(f.name, fn_ty);
         fn = llvm::cast<llvm::Function>(callee.getCallee());
     }
 
@@ -147,135 +148,161 @@ llvm::Function* IRGenFromSema::emitFunction(const sema::Function& f) {
         vars_.back()[std::string(arg.getName())] = &arg;
         ++idx;
     }
-    emitBlock(*f.body);
+    emit_block(*f.body);
 
     // if the last block does not have terminator, return void or error
     if (!entry->getTerminator()) {
-        if (retTy->isVoidTy()) builder_->CreateRetVoid();
+        if (ret_ty->isVoidTy()) builder_->CreateRetVoid();
         else throw std::runtime_error("missing return");
     }
     vars_.pop_back();
     return fn;
 }
 
-void IRGenFromSema::emitBlock(const sema::Block& b) {
-    for (auto& s : b.statements) emitStmt(*s);
+void ir_gen_from_sema::emit_block(const sema::block& b) {
+    for (auto& s : b.statements) emit_stmt(*s);
 }
 
-void IRGenFromSema::emitStmt(const sema::Stmt& s) {
-    if (auto* vd = dynamic_cast<const sema::StmtVarDecl*>(&s)) {
-        auto* init = vd->initExpr ? emitExpr(*vd->initExpr) : nullptr;
+void ir_gen_from_sema::emit_stmt(const sema::stmt& s) {
+    if (auto* vd = dynamic_cast<const sema::stmt_var_decl*>(&s)) {
+        auto* init = vd->init_expr ? emit_expr(*vd->init_expr) : nullptr;
         if (!init) {
 
-		if (vd->declType.builtin.Kind == Type::STRING) {
+		if (vd->decl_type.builtin.kind == type::kind_enum::string) {
 			init = llvm::ConstantPointerNull::get(llvm::Type::getInt8Ty(ctx_)->getPointerTo());
-        } else if (vd->declType.builtin.Kind == Type::F16) {
-            init = llvm::ConstantFP::get(toLlvmType(vd->declType), llvm::APFloat(0.0f));
-        } else if (vd->declType.builtin.Kind == Type::UNIT) {
+        } else if (vd->decl_type.builtin.kind == type::kind_enum::f16) {
+            init = llvm::ConstantFP::get(to_llvm_type(vd->decl_type), llvm::APFloat(0.0f));
+        } else if (vd->decl_type.builtin.kind == type::kind_enum::unit) {
             init = nullptr; // no storage needed
-        } else if (vd->declType.builtin.Kind == Type::NORETURN) {
+        } else if (vd->decl_type.builtin.kind == type::kind_enum::noreturn) {
 			throw std::runtime_error("variable cannot have noreturn type");
 		}
 
-        else if (vd->declType.builtin.isUnsigned())
-                init = llvm::ConstantInt::get(toLlvmType(vd->declType), 0, false);
+        else if (vd->decl_type.builtin.is_unsigned())
+                init = llvm::ConstantInt::get(to_llvm_type(vd->decl_type), 0, false);
             else
-                init = llvm::ConstantInt::get(toLlvmType(vd->declType), 0, true);
+                init = llvm::ConstantInt::get(to_llvm_type(vd->decl_type), 0, true);
         }
         vars_.back()[vd->name] = init;
-    } else if (auto* ret = dynamic_cast<const sema::StmtReturn*>(&s)) {
+    } else if (auto* ret = dynamic_cast<const sema::stmt_return*>(&s)) {
         if (!ret->value) {
             builder_->CreateRetVoid();
         } else {
-            auto* v = emitExpr(*ret->value);
+            auto* v = emit_expr(*ret->value);
             builder_->CreateRet(v);
         }
-    } else if (auto* se = dynamic_cast<const sema::StmtExpr*>(&s)) {
-        (void)emitExpr(*se->expr);
+    } else if (auto* se = dynamic_cast<const sema::stmt_expr*>(&s)) {
+        (void)emit_expr(*se->expr);
     } else {
 	    
     }
 }
 
-llvm::Value* IRGenFromSema::emitExpr(const sema::Expr& e) {
-    if (auto* lit = dynamic_cast<const sema::Literal*>(&e)) {
-        return toLlvmConst(lit->value);
+llvm::Value* ir_gen_from_sema::emit_expr(const sema::expr& e) {
+    if (auto* lit = dynamic_cast<const sema::literal*>(&e)) {
+        return to_llvm_const(lit->value);
     }
-    if (auto* vr = dynamic_cast<const sema::VarRef*>(&e)) {
-	    auto it = vars_.back().find(vr->name);
+    if (auto* vr = dynamic_cast<const sema::var_ref*>(&e)) {
+	    const auto it = vars_.back().find(vr->name);
 	    if (it == vars_.back().end()) throw std::runtime_error("undefined var in IRGen: " + vr->name);
 	    return it->second;
     }
-    if (auto* u = dynamic_cast<const sema::Unary*>(&e)) {
-	    return emitUnary(*u);
+    if (auto* u = dynamic_cast<const sema::unary*>(&e)) {
+	    return emit_unary(*u);
     }
-    if (auto* b = dynamic_cast<const sema::BinOp*>(&e)) {
-	    return emitBinOp(*b);
+    if (auto* b = dynamic_cast<const sema::bin_op*>(&e)) {
+	    return emit_bin_op(*b);
     }
-    if (auto* c = dynamic_cast<const sema::Call*>(&e)) {
+    if (auto* c = dynamic_cast<const sema::call*>(&e)) {
+
+        if (c->callee == "__cl_f16_printfn") {
+            auto* void_ty = llvm::Type::getVoidTy(ctx_);
+            auto* float_ty = llvm::Type::getFloatTy(ctx_);
+            auto* fn_ty = llvm::FunctionType::get(void_ty, { float_ty }, false);
+
+            llvm::Function* callee = mod_->getFunction("__cl_f16_printfn");
+            if (callee) {
+	            if (callee->getFunctionType() != fn_ty) {
+		            if (!callee->use_empty()) {
+			            callee->setName("__cl_f16_printfn_OLD");
+		            } else {
+                        callee->eraseFromParent();
+		            }
+                    callee = nullptr;
+	            }
+            }
+
+            if (!callee) {
+                auto fc = mod_->getOrInsertFunction("__cl_f16_printfn", fn_ty);
+                callee = llvm::cast<llvm::Function>(fc.getCallee());
+                callee->setCallingConv(llvm::CallingConv::C);
+            }
+
+            if (c->args.size() != 1) throw std::runtime_error("__cl_f16_printfn expected 1 args");
+            llvm::Value* arg0 = emit_expr(*c->args[0]);
+            if (arg0->getType()->isHalfTy()) {
+	            arg0 = builder_->CreateFPExt(arg0, float_ty, "h2f");
+            } else if (arg0->getType()->isFloatTy()) {
+            } else {
+                throw std::runtime_error("__cl_f16_printfn: doesn't support other then float type");
+            }
+
+            return builder_->CreateCall(callee, { arg0 });
+        }
+
 	    llvm::Function* callee = mod_->getFunction(c->callee);
 	    if (!callee) {
-		    std::vector<llvm::Type*> paramTys;
-		    for (auto& a : c->args) paramTys.push_back(toLlvmType(a->type));
-		    auto* retTy = toLlvmType(c->type);
-		    auto* fnTy = llvm::FunctionType::get(retTy, paramTys, false);
-		    auto fi = mod_->getOrInsertFunction(c->callee, fnTy);
+		    std::vector<llvm::Type*> param_tys;
+		    param_tys.reserve(c->args.size());
+		    for (auto& a : c->args) param_tys.push_back(to_llvm_type(a->type));
+		    auto* retTy = to_llvm_type(c->type);
+		    auto* fn_ty = llvm::FunctionType::get(retTy, param_tys, false);
+		    auto fi = mod_->getOrInsertFunction(c->callee, fn_ty);
 		    callee = llvm::cast<llvm::Function>(fi.getCallee());
 	    }
 	    std::vector<llvm::Value*> args;
 	    args.reserve(c->args.size());
-	    for (auto& a : c->args) args.push_back(emitExpr(*a));
+	    for (auto& a : c->args) args.push_back(emit_expr(*a));
 	    return builder_->CreateCall(callee, args);
     }
-    if (auto* cast = dynamic_cast<const sema::Cast*>(&e)) {
-        llvm::Value* v = emitExpr(*cast->inner);
-        const TypeRef& src = cast->inner->type;
-        const TypeRef& dst = cast->targetType;
+    if (auto* cast = dynamic_cast<const sema::cast*>(&e)) {
+        llvm::Value* v = emit_expr(*cast->inner);
+        const type_ref& src = cast->inner->type;
+        const type_ref& dst = cast->target_type;
 
-        if (!src.isBuiltin() || !dst.isBuiltin())
+        if (!src.is_builtin() || !dst.is_builtin())
             throw std::runtime_error("emitCast: non-builtin types are not supported");
 
-        if (src.builtin.Kind == dst.builtin.Kind) return v;
+        if (src.builtin.kind == dst.builtin.kind) return v;
 
-        auto* dstTy = toLlvmType(dst);
+        auto* dstTy = to_llvm_type(dst);
 
-        auto is_int_kind = [](Type::KindEnum k) {
+        auto is_int_kind = [](const type::kind_enum k) {
             switch (k) {
-            case Type::I8: case Type::U8:
-            case Type::I16: case Type::U16:
-            case Type::I32: case Type::U32:
-            case Type::I64: case Type::U64:
+            case type::kind_enum::i8: case type::kind_enum::u8:
+            case type::kind_enum::i16: case type::kind_enum::u16:
+            case type::kind_enum::i32: case type::kind_enum::u32:
+            case type::kind_enum::i64: case type::kind_enum::u64:
                 return true;
-            case Type::STRING: case Type::NORETURN: case Type::UNIT: case Type::F16:
+            case type::kind_enum::string: case type::kind_enum::noreturn: case type::kind_enum::unit: case type::kind_enum::f16:
                 return false;
             }
             return false;
         };
 
-        if (is_int_kind(src.builtin.Kind) && is_int_kind(dst.builtin.Kind)) {
-            if (!v->getType()->isIntegerTy() || !dstTy->isIntegerTy())
-                throw std::runtime_error("emitCast(int<->int): llvm types not integer");
+        if (is_int_kind(src.builtin.kind) && dst.builtin.kind == type::kind_enum::f16) {
+            if (!v->getType()->isIntegerTy() || !dstTy->isHalfTy())
+                throw std::runtime_error("emitCast(int<->f16): type mismatch");
 
-            auto* srcITy = llvm::cast<llvm::IntegerType>(v->getType());
-            auto* dstITy = llvm::cast<llvm::IntegerType>(dstTy);
-            unsigned sbw = srcITy->getBitWidth();
-            unsigned dbw = dstITy->getBitWidth();
-
-            if (sbw == dbw) {
-                return v;
-            }
-            if (sbw < dbw) {
-	            return src.builtin.isUnsigned()
-		                   ? builder_->CreateZExt(v, dstITy)
-		                   : builder_->CreateSExt(v, dstITy);
-            }
-            return builder_->CreateTrunc(v, dstITy);
+            return src.builtin.is_unsigned()
+                ? builder_->CreateUIToFP(v, dstTy)
+                : builder_->CreateSIToFP(v, dstTy);
         }
 
-        if (src.builtin.Kind == Type::F16 && is_int_kind(dst.builtin.Kind)) {
+        if (src.builtin.kind == type::kind_enum::f16 && is_int_kind(dst.builtin.kind)) {
             if (!v->getType()->isHalfTy() || !dstTy->isIntegerTy())
                 throw std::runtime_error("emitCast(f16->int): type mismatch");
-            return dst.builtin.isUnsigned()
+            return dst.builtin.is_unsigned()
                 ? builder_->CreateFPToUI(v, dstTy)
                 : builder_->CreateFPToSI(v, dstTy);
         }
@@ -285,8 +312,8 @@ llvm::Value* IRGenFromSema::emitExpr(const sema::Expr& e) {
     throw std::runtime_error("emitExpr: unsupported node");
 }
 
-llvm::Value* IRGenFromSema::emitUnary(const sema::Unary& u) {
-    auto* v = emitExpr(*u.inner);
+llvm::Value* ir_gen_from_sema::emit_unary(const sema::unary& u) {
+    auto* v = emit_expr(*u.inner);
     if (u.op == "-") {
         if (v->getType()->isIntegerTy()) {
             return builder_->CreateNeg(v);
@@ -298,17 +325,17 @@ llvm::Value* IRGenFromSema::emitUnary(const sema::Unary& u) {
     throw std::runtime_error("emitUnary: unsupported op/type");
 }
 
-llvm::Value* IRGenFromSema::emitBinOp(const sema::BinOp& b) {
-    auto* lhs = emitExpr(*b.lhs);
-    auto* rhs = emitExpr(*b.rhs);
+llvm::Value* ir_gen_from_sema::emit_bin_op(const sema::bin_op& b) {
+    auto* lhs = emit_expr(*b.lhs);
+    auto* rhs = emit_expr(*b.rhs);
     if (lhs->getType()->isIntegerTy() && lhs->getType() == rhs->getType()) {
 
-		const bool isUnsigned = b.lhs->type.builtin.isUnsigned() && b.rhs->type.builtin.isUnsigned();
+		const bool is_unsigned = b.lhs->type.builtin.is_unsigned() && b.rhs->type.builtin.is_unsigned();
 
         if (b.op == "+") return builder_->CreateAdd(lhs, rhs);
         if (b.op == "-") return builder_->CreateSub(lhs, rhs);
         if (b.op == "*") return builder_->CreateMul(lhs, rhs);
-        if (b.op == "/") return isUnsigned
+        if (b.op == "/") return is_unsigned
             ? builder_->CreateUDiv(lhs, rhs)
             : builder_->CreateSDiv(lhs, rhs);
 		// TODO: mod, bitwise ops, shifts
@@ -319,106 +346,106 @@ llvm::Value* IRGenFromSema::emitBinOp(const sema::BinOp& b) {
         if (b.op == "-") return builder_->CreateFSub(lhs, rhs);
         if (b.op == "*") return builder_->CreateFMul(lhs, rhs);
         if (b.op == "/") return builder_->CreateFDiv(lhs, rhs);
-    } else if (b.lhs->type.isBuiltin() && b.rhs->type.isBuiltin()
-         && b.lhs->type.builtin.Kind == Type::STRING
-         && b.rhs->type.builtin.Kind == Type::STRING) {
+    } else if (b.lhs->type.is_builtin() && b.rhs->type.is_builtin()
+         && b.lhs->type.builtin.kind == type::kind_enum::string
+         && b.rhs->type.builtin.kind == type::kind_enum::string) {
 
     	if (b.op != "+") {
             throw std::runtime_error("emitBinOp: unsupported string op (only +)");
         }
 
-		auto* i8Ptr = llvm::Type::getInt8Ty(ctx_)->getPointerTo();
-		auto* fntTy = llvm::FunctionType::get(i8Ptr, { i8Ptr, i8Ptr }, false);
+		auto* i8_ptr = llvm::Type::getInt8Ty(ctx_)->getPointerTo();
+		auto* fnt_ty = llvm::FunctionType::get(i8_ptr, { i8_ptr, i8_ptr }, false);
 		llvm::Function* f = mod_->getFunction("__cl_string_concat");
         if (!f) {
-			f = llvm::Function::Create(fntTy, llvm::Function::ExternalLinkage, "__cl_string_concat", mod_.get());
+			f = llvm::Function::Create(fnt_ty, llvm::Function::ExternalLinkage, "__cl_string_concat", mod_.get());
         }
 		return builder_->CreateCall(f, { lhs, rhs });
     }
     throw std::runtime_error("emitBinOp: unsupported op/type");
 }
 
-llvm::Type* IRGenFromSema::toLlvmType(const TypeRef& t) {
-    if (!t.isBuiltin()) throw std::runtime_error("toLlvmType: non-builtin");
-    switch (t.builtin.Kind) {
-        case Type::I8:  
-        case Type::U8:
+llvm::Type* ir_gen_from_sema::to_llvm_type(const type_ref& t) const {
+    if (!t.is_builtin()) throw std::runtime_error("toLlvmType: non-builtin");
+    switch (t.builtin.kind) {
+        case type::kind_enum::i8:  
+        case type::kind_enum::u8:
             return llvm::Type::getInt8Ty(ctx_);
-		case Type::I16:
-		case Type::U16:
+		case type::kind_enum::i16:
+		case type::kind_enum::u16:
             return llvm::Type::getInt16Ty(ctx_);
 
-        case Type::I32:
-        case Type::U32:
+        case type::kind_enum::i32:
+        case type::kind_enum::u32:
     		return llvm::Type::getInt32Ty(ctx_);
-        case Type::I64:
-        case Type::U64:
+        case type::kind_enum::i64:
+        case type::kind_enum::u64:
     		return llvm::Type::getInt64Ty(ctx_);
-        case Type::F16: return llvm::Type::getHalfTy(ctx_);
-        case Type::UNIT:
-        case Type::NORETURN:
+        case type::kind_enum::f16: return llvm::Type::getHalfTy(ctx_);
+        case type::kind_enum::unit:
+        case type::kind_enum::noreturn:
     		return llvm::Type::getVoidTy(ctx_);
-    case Type::STRING:
+    case type::kind_enum::string:
 		return llvm::Type::getInt8Ty(ctx_)->getPointerTo();
     }
 	throw std::runtime_error("toLlvmType: unsupported kind");
 }
 
-llvm::Constant* IRGenFromSema::toLlvmConst(const Value& v) {
-    if (!v.type.isBuiltin()) throw std::runtime_error("toLlvmConst: non-builtin");
-    switch (v.type.builtin.Kind) {
-        case Type::I8: {
-            auto nv = asNum2(v);
-            int64_t s = std::holds_alternative<int64_t>(nv) ? std::get<int64_t>(nv) : (int64_t)std::get<uint64_t>(nv);
+llvm::Constant* ir_gen_from_sema::to_llvm_const(const value& v) const {
+    if (!v.type.is_builtin()) throw std::runtime_error("toLlvmConst: non-builtin");
+    switch (v.type.builtin.kind) {
+        case type::kind_enum::i8: {
+            auto nv = as_num2(v);
+            int64_t s = std::holds_alternative<int64_t>(nv) ? std::get<int64_t>(nv) : static_cast<int64_t>(std::get<uint64_t>(nv));
             return llvm::ConstantInt::get(llvm::Type::getInt8Ty(ctx_), s, true);
         }
-        case Type::U8: {
-            auto nv = asNum2(v);
-            uint64_t u = std::holds_alternative<uint64_t>(nv) ? std::get<uint64_t>(nv) : (uint64_t)std::get<int64_t>(nv);
+        case type::kind_enum::u8: {
+            auto nv = as_num2(v);
+            uint64_t u = std::holds_alternative<uint64_t>(nv) ? std::get<uint64_t>(nv) : static_cast<uint64_t>(std::get<int64_t>(nv));
             return llvm::ConstantInt::get(llvm::Type::getInt8Ty(ctx_), u, false);
         }
-        case Type::I16: {
+        case type::kind_enum::i16: {
             auto* ty16 = llvm::Type::getInt16Ty(ctx_);
-            auto nv = asNum2(v);
+            auto nv = as_num2(v);
             int64_t s = std::holds_alternative<int64_t>(nv) ? std::get<int64_t>(nv) : static_cast<int64_t>(std::get<uint64_t>(nv));
             return llvm::ConstantInt::get(ty16, s, true);
         }
-        case Type::U16: {
+        case type::kind_enum::u16: {
             auto* ty16 = llvm::Type::getInt16Ty(ctx_);
-            auto nv = asNum2(v);
+            auto nv = as_num2(v);
             uint64_t u = std::holds_alternative<uint64_t>(nv) ? std::get<uint64_t>(nv) : static_cast<uint64_t>(std::get<int64_t>(nv));
             return llvm::ConstantInt::get(ty16, u, false);
         }
-        case Type::I32: {
-            auto nv = asNum2(v);
-            int64_t s = std::holds_alternative<int64_t>(nv) ? std::get<int64_t>(nv) : (int64_t)std::get<uint64_t>(nv);
+        case type::kind_enum::i32: {
+            auto nv = as_num2(v);
+            int64_t s = std::holds_alternative<int64_t>(nv) ? std::get<int64_t>(nv) : static_cast<int64_t>(std::get<uint64_t>(nv));
             return llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx_), s, true);
         }
-        case Type::U32: {
-            auto nv = asNum2(v);
-            uint64_t u = std::holds_alternative<uint64_t>(nv) ? std::get<uint64_t>(nv) : (uint64_t)std::get<int64_t>(nv);
+        case type::kind_enum::u32: {
+            auto nv = as_num2(v);
+            uint64_t u = std::holds_alternative<uint64_t>(nv) ? std::get<uint64_t>(nv) : static_cast<uint64_t>(std::get<int64_t>(nv));
             return llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx_), u, false);
         }
-        case Type::I64: {
-            auto nv = asNum2(v);
-            int64_t s = std::holds_alternative<int64_t>(nv) ? std::get<int64_t>(nv) : (int64_t)std::get<uint64_t>(nv);
+        case type::kind_enum::i64: {
+            auto nv = as_num2(v);
+            int64_t s = std::holds_alternative<int64_t>(nv) ? std::get<int64_t>(nv) : static_cast<int64_t>(std::get<uint64_t>(nv));
             return llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), s, true);
         }
-        case Type::U64: {
-            auto nv = asNum2(v);
-            uint64_t u = std::holds_alternative<uint64_t>(nv) ? std::get<uint64_t>(nv) : (uint64_t)std::get<int64_t>(nv);
+        case type::kind_enum::u64: {
+            auto nv = as_num2(v);
+            uint64_t u = std::holds_alternative<uint64_t>(nv) ? std::get<uint64_t>(nv) : static_cast<uint64_t>(std::get<int64_t>(nv));
             return llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), u, false);
         }
-        case Type::F16: {
-            const CLHalf h = std::get<CLHalf>(v.v);
+        case type::kind_enum::f16: {
+            const cl_half h = std::get<cl_half>(v.v);
             llvm::APFloat apf(llvm::APFloat::IEEEhalf(), llvm::APInt(16, h.bits));
             return llvm::ConstantFP::get(llvm::Type::getHalfTy(ctx_), apf);
         }
 
-        case Type::UNIT:
-		case Type::NORETURN:
+        case type::kind_enum::unit:
+		case type::kind_enum::noreturn:
 			throw std::runtime_error("toLlvmConst: unit/noreturn has no value");
-		case Type::STRING:
+		case type::kind_enum::string:
             const auto& str = as_string(v);
             auto* arr = llvm::ConstantDataArray::getString(ctx_, str, true);
 

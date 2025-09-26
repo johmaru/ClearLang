@@ -18,17 +18,17 @@
 // ir debugging, if return os error code
 #include <atomic>
 #include <cstdint>
-static std::atomic<int32_t> g_exitCode{0};
-extern "C" void cl_set_exit_code(int32_t c){ g_exitCode.store(c, std::memory_order_relaxed); }
-extern "C" int32_t cl_exit_code(){ return g_exitCode.load(std::memory_order_relaxed); }
+static std::atomic<int32_t> g_exit_code{0};
+extern "C" void cl_set_exit_code(const int32_t c){ g_exit_code.store(c, std::memory_order_relaxed); }
+extern "C" int32_t cl_exit_code(){ return g_exit_code.load(std::memory_order_relaxed); }
 
 #ifdef _WIN32
 #include <Windows.h>
 extern "C" void cl_set_exit_code_from_win32_last_error(){
-    DWORD e = GetLastError();
-    g_exitCode.store(e ? (int32_t)e : 1, std::memory_order_relaxed);
+    const DWORD e = GetLastError();
+    g_exit_code.store(e ? static_cast<int32_t>(e) : 1, std::memory_order_relaxed);
 }
-extern "C" void cl_force_win32_error(DWORD code){
+extern "C" void cl_force_win32_error(const DWORD code){
     SetLastError(code);
     cl_set_exit_code_from_win32_last_error();
 }
@@ -55,7 +55,7 @@ int main(int argc, const char* argv[]) {
                 code = argv[2];
             }
         } else {
-            code.assign((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
+            return -1;
         }
 
         antlr4::ANTLRInputStream input(code);

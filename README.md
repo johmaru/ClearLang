@@ -34,7 +34,7 @@ This generates CMake files under `out/conan/build/generators/` and a toolchain f
 
 Debug
 ```powershell
-conan install . -s build_type=Debug -of out/conan/ninja-release -b missing
+conan install . -s build_type=Debug -of out/conan/ninja-debug -b missing -c tools.cmake.cmaketoolchain:generator=Ninja
 cmake --build --preset ninja-debug --target generate_parser
 cmake --preset ninja-debug
 cmake --build --preset ninja-debug

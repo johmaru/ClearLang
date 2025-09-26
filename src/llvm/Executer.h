@@ -16,4 +16,4 @@
 
 int execute(int argc,const char* argv[],ClearLanguageParser& parser);
 
-int support_execute_debug(IRGenFromSema& ir, std::unique_ptr<llvm::LLVMContext>& ctx);
+int support_execute_debug(ir_gen_from_sema& ir, std::unique_ptr<llvm::LLVMContext>& ctx);

@@ -14,11 +14,11 @@
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 
-class IRGenVisitor : public ClearLanguageBaseVisitor {
+class ir_gen_visitor : public ClearLanguageBaseVisitor {
     public:
-        explicit IRGenVisitor(llvm::LLVMContext& ctx, const std::string& moduleName);
+        explicit ir_gen_visitor(llvm::LLVMContext& ctx, const std::string& module_name);
 
-        llvm::Module& module();
+        [[nodiscard]] llvm::Module& module() const;
 
         // entry point
         std::any visitStart(ClearLanguageParser::StartContext* ctx) override;
@@ -40,26 +40,25 @@ class IRGenVisitor : public ClearLanguageBaseVisitor {
 
 
     private:
+        [[nodiscard]] llvm::Type* to_llvm_type(const type_ref& t) const;
+        [[nodiscard]] llvm::Constant* to_llvm_constant(const value& v) const;
 
-        llvm::Type* toLlvmType(const TypeRef& t);
-        llvm::Constant* toLlvmConstant(const Value& v);
+        llvm::Value* emit_f16_bin_op(const std::string& op, llvm::Value* lhs, llvm::Value* rhs) const;
 
-        llvm::Value* emitF16BinOp(const std::string& op, llvm::Value* lhs, llvm::Value* rhs);
+        static llvm::Function* declare_function(const function_value& fv);
+        llvm::Function* get_function_by_name(const std::string& name);
+        void enter_function(llvm::Function* fn);
+        void leave_function();
 
-        llvm::Function* declareFunction(const FunctionValue& fv);
-        llvm::Function* getFunctionByName(const std::string& name);
-        void enterFunction(llvm::Function* fn);
-        void leaveFunction();
-
-        llvm::Value* ensureIntegerBinOp(llvm::Value* lhs, llvm::Value* rhs, const std::string& op);
-        [[noreturn]] void notImplemented(const std::string& what);
+        llvm::Value* ensure_integer_bin_op(llvm::Value* lhs, llvm::Value* rhs, const std::string& op) const;
+        [[noreturn]] static void not_implemented(const std::string& what);
 
     private:
         llvm::LLVMContext& ctx_;
         std::unique_ptr<llvm::Module> module_;
         std::unique_ptr<llvm::IRBuilder<>> builder_;
 
-        std::vector<std::unordered_map<std::string, llvm::Value*>> varScopes_;
+        std::vector<std::unordered_map<std::string, llvm::Value*>> var_scopes_;
 
         std::unordered_map<std::string, llvm::Function*> function_;
 };

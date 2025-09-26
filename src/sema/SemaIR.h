@@ -5,67 +5,67 @@
 #include "../core/CLType.h"
 
 namespace sema {
-    struct Node {virtual ~Node() = default;};
+    struct node {virtual ~node() = default;};
 
-    struct Expr : Node {TypeRef type; virtual bool isConst() const {return false;}};
+    struct expr : node {type_ref type; [[nodiscard]] virtual bool is_const() const {return false;}};
 
-    struct Literal : Expr {
-        Value value;
-        bool isConst() const override {return true;}
+    struct literal : expr {
+        value value;
+        [[nodiscard]] bool is_const() const override {return true;}
     };
 
-    struct VarRef : Expr { std::string name;};
+    struct var_ref : expr { std::string name;};
 
-    struct Cast : Expr {
-        TypeRef targetType;
-        std::shared_ptr<Expr> inner;
-        bool isConst() const override { return inner->isConst(); }
+    struct cast : expr {
+        type_ref target_type;
+        std::shared_ptr<expr> inner;
+        [[nodiscard]] bool is_const() const override { return inner->is_const(); }
 	};
 
-    struct BinOp : Expr {
+    struct bin_op : expr {
         std::string op;
-        std::shared_ptr<Expr> lhs;
-        std::shared_ptr<Expr> rhs;
+        std::shared_ptr<expr> lhs;
+        std::shared_ptr<expr> rhs;
     };
 
-    struct Unary : Expr {
+    struct unary : expr {
         std::string op;
-        std::shared_ptr<Expr> inner;
+        std::shared_ptr<expr> inner;
     };
 
-    struct Call : Expr {
+    struct call : expr {
         std::string callee;
-        std::vector<std::shared_ptr<Expr>> args;
+        std::vector<std::shared_ptr<expr>> args;
     };
 
-    struct Stmt  : Node {};
-    struct StmtVarDecl : Stmt {
+    struct stmt  : node {};
+    struct stmt_var_decl : stmt {
         std::string name;
-        TypeRef declType;
-        std::shared_ptr<Expr> initExpr; // may be null
+        type_ref decl_type;
+        std::shared_ptr<expr> init_expr; // may be null
     };
 
-    struct StmtReturn : Stmt { std::shared_ptr<Expr> value; };
+    struct stmt_return : stmt { std::shared_ptr<expr> value; };
 
-    struct StmtExpr : Stmt {
-        std::shared_ptr<Expr> expr;
+    struct stmt_expr : stmt {
+        std::shared_ptr<expr> expr;
 	};
 
-    struct Block : Stmt {
-        std::vector<std::shared_ptr<Stmt>> statements;
+    struct block : stmt {
+        std::vector<std::shared_ptr<stmt>> statements;
     };
 
-    struct Param { std::string name; TypeRef type; };
-    struct Function {
+    struct param { std::string name; type_ref type; };
+    struct function {
         std::string name;
-        std::vector<Param> params;
-        TypeRef returnType;
-        std::shared_ptr<Block> body;
+        std::vector<param> params;
+        type_ref return_type;
+        std::shared_ptr<block> body;
     };
 
-    struct Module : Node {
-        std::vector<std::shared_ptr<Function>> functions;
-        std::string entryName; // optional; set when [EntryPoint] is present
+    struct module : node {
+        std::vector<std::shared_ptr<function>> functions;
+        std::string entry_name; // optional; set when [EntryPoint] is present
     };
 
 }  // namespace sema

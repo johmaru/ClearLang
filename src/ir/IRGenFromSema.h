@@ -5,28 +5,28 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 
-class IRGenFromSema {
+class ir_gen_from_sema {
 public:
-    IRGenFromSema(llvm::LLVMContext& ctx, std::string moduleName);
+    ir_gen_from_sema(llvm::LLVMContext& ctx, std::string module_name);
 
-    llvm::Module& module();
-    void emitModule(const sema::Module& m);
+    [[nodiscard]] llvm::Module& module() const;
+    void emit_module(const sema::module& m);
     // Transfer ownership of the underlying Module (for ORC JIT)
-    std::unique_ptr<llvm::Module> takeModule();
+    std::unique_ptr<llvm::Module> take_module();
 
 private:
-    llvm::Function* emitFunction(const sema::Function& f);
-    void emitBlock(const sema::Block& b);
-    llvm::Value* emitExpr(const sema::Expr& e);
-    void emitStmt(const sema::Stmt& s);
+    llvm::Function* emit_function(const sema::function& f);
+    void emit_block(const sema::block& b);
+    llvm::Value* emit_expr(const sema::expr& e);
+    void emit_stmt(const sema::stmt& s);
 
-    llvm::Type* toLlvmType(const TypeRef& t);
-    llvm::Constant* toLlvmConst(const Value& v);
-    llvm::Value* emitBinOp(const sema::BinOp& b);
-    llvm::Value* emitUnary(const sema::Unary& u);
+    [[nodiscard]] llvm::Type* to_llvm_type(const type_ref& t) const;
+    [[nodiscard]] llvm::Constant* to_llvm_const(const value& v) const;
+    llvm::Value* emit_bin_op(const sema::bin_op& b);
+    llvm::Value* emit_unary(const sema::unary& u);
 
 private:
-    void emitEntryShim(const sema::Module& m);
+    void emit_entry_shim(const sema::module& m) const;
     llvm::LLVMContext& ctx_;
     std::unique_ptr<llvm::Module> mod_;
     std::unique_ptr<llvm::IRBuilder<>> builder_;
