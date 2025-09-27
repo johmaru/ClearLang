@@ -116,6 +116,15 @@ void ir_gen_from_sema::emit_entry_shim(const sema::module& m) const {
 	    builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 3)); // 1(tag) + 2 (data)
 	    return;
     }
+    if (ret_ty->isFloatTy()) {
+        llvm::Value* h = builder_->CreateCall(entry, {});
+        llvm::Value* bits = builder_->CreateBitCast(h, i32_ty);
+        store_tag(7);
+        auto* p32 = builder_->CreateBitCast(data_ptr, i32_ty->getPointerTo());
+        builder_->CreateStore(bits, p32);
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 5));
+        return;
+    }
     builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 0));
 }
 
@@ -168,15 +177,14 @@ void ir_gen_from_sema::emit_stmt(const sema::stmt& s) {
         auto* init = vd->init_expr ? emit_expr(*vd->init_expr) : nullptr;
         if (!init) {
 
-		if (vd->decl_type.builtin.kind == type::kind_enum::string) {
+		if (vd->decl_type.builtin.kind == type::kind_enum::string)
 			init = llvm::ConstantPointerNull::get(llvm::Type::getInt8Ty(ctx_)->getPointerTo());
-        } else if (vd->decl_type.builtin.kind == type::kind_enum::f16) {
+        else if (vd->decl_type.builtin.kind == type::kind_enum::f16 || vd->decl_type.builtin.kind == type::kind_enum::f32)
             init = llvm::ConstantFP::get(to_llvm_type(vd->decl_type), llvm::APFloat(0.0f));
-        } else if (vd->decl_type.builtin.kind == type::kind_enum::unit) {
+        else if (vd->decl_type.builtin.kind == type::kind_enum::unit)
             init = nullptr; // no storage needed
-        } else if (vd->decl_type.builtin.kind == type::kind_enum::noreturn) {
+        else if (vd->decl_type.builtin.kind == type::kind_enum::noreturn)
 			throw std::runtime_error("variable cannot have noreturn type");
-		}
 
         else if (vd->decl_type.builtin.is_unsigned())
                 init = llvm::ConstantInt::get(to_llvm_type(vd->decl_type), 0, false);
@@ -215,37 +223,34 @@ llvm::Value* ir_gen_from_sema::emit_expr(const sema::expr& e) {
     }
     if (auto* c = dynamic_cast<const sema::call*>(&e)) {
 
-        if (c->callee == "__cl_f16_printfn") {
+        if (c->callee == "__cl_f16_printfn" || c->callee == "__cl_f32_printfn") {
             auto* void_ty = llvm::Type::getVoidTy(ctx_);
             auto* float_ty = llvm::Type::getFloatTy(ctx_);
             auto* fn_ty = llvm::FunctionType::get(void_ty, { float_ty }, false);
 
-            llvm::Function* callee = mod_->getFunction("__cl_f16_printfn");
+            const std::string fnName = c->callee;
+            llvm::Function* callee = mod_->getFunction(fnName);
             if (callee) {
 	            if (callee->getFunctionType() != fn_ty) {
-		            if (!callee->use_empty()) {
-			            callee->setName("__cl_f16_printfn_OLD");
-		            } else {
-                        callee->eraseFromParent();
-		            }
+		            if (!callee->use_empty()) callee->setName(fnName + "_OLD");
+		            else callee->eraseFromParent();
+		            
                     callee = nullptr;
 	            }
             }
 
             if (!callee) {
-                auto fc = mod_->getOrInsertFunction("__cl_f16_printfn", fn_ty);
+                auto fc = mod_->getOrInsertFunction(fnName, fn_ty);
                 callee = llvm::cast<llvm::Function>(fc.getCallee());
                 callee->setCallingConv(llvm::CallingConv::C);
             }
 
-            if (c->args.size() != 1) throw std::runtime_error("__cl_f16_printfn expected 1 args");
+            if (c->args.size() != 1) throw std::runtime_error(fnName +" expected 1 args");
             llvm::Value* arg0 = emit_expr(*c->args[0]);
             if (arg0->getType()->isHalfTy()) {
 	            arg0 = builder_->CreateFPExt(arg0, float_ty, "h2f");
-            } else if (arg0->getType()->isFloatTy()) {
-            } else {
-                throw std::runtime_error("__cl_f16_printfn: doesn't support other then float type");
-            }
+            } else if (arg0->getType()->isFloatTy()) {}
+              else throw std::runtime_error(fnName +": doesn't support other then float type");
 
             return builder_->CreateCall(callee, { arg0 });
         }
@@ -284,7 +289,7 @@ llvm::Value* ir_gen_from_sema::emit_expr(const sema::expr& e) {
             case type::kind_enum::i32: case type::kind_enum::u32:
             case type::kind_enum::i64: case type::kind_enum::u64:
                 return true;
-            case type::kind_enum::string: case type::kind_enum::noreturn: case type::kind_enum::unit: case type::kind_enum::f16:
+            case type::kind_enum::string: case type::kind_enum::noreturn: case type::kind_enum::unit: case type::kind_enum::f16: case type::kind_enum::f32:
                 return false;
             }
             return false;
@@ -307,6 +312,23 @@ llvm::Value* ir_gen_from_sema::emit_expr(const sema::expr& e) {
                 : builder_->CreateFPToSI(v, dstTy);
         }
 
+        if (is_int_kind(src.builtin.kind) && dst.builtin.kind == type::kind_enum::f32) {
+            if (!v->getType()->isIntegerTy() || !dstTy->isFloatTy())
+                throw std::runtime_error("emitCast (int<->f16): type mismatch");
+
+            return src.builtin.is_unsigned()
+                ? builder_->CreateUIToFP(v, dstTy)
+				: builder_->CreateSIToFP(v, dstTy);
+        }
+
+        if (src.builtin.kind == type::kind_enum::f32 && is_int_kind(dst.builtin.kind)) {
+            if (!v->getType()->isFloatTy() || !dstTy->isIntegerTy())
+                throw std::runtime_error("emitCast(f32->int): type mismatch");
+            return dst.builtin.is_unsigned()
+                ? builder_->CreateFPToUI(v, dstTy)
+                : builder_->CreateFPToSI(v, dstTy);
+        }
+
         throw std::runtime_error("emitCast: unsupported cast");
     }
     throw std::runtime_error("emitExpr: unsupported node");
@@ -317,9 +339,10 @@ llvm::Value* ir_gen_from_sema::emit_unary(const sema::unary& u) {
     if (u.op == "-") {
         if (v->getType()->isIntegerTy()) {
             return builder_->CreateNeg(v);
-        } else if (v->getType()->isHalfTy()) {
-            llvm::Value* zero = llvm::ConstantFP::get(v->getType(), 0.0);
-            return builder_->CreateFSub(zero, v);
+        }
+        if (v->getType()->isHalfTy() || v->getType()->isFloatTy()) {
+	        llvm::Value* zero = llvm::ConstantFP::get(v->getType(), 0.0);
+	        return builder_->CreateFSub(zero, v);
         }
     }
     throw std::runtime_error("emitUnary: unsupported op/type");
@@ -342,6 +365,11 @@ llvm::Value* ir_gen_from_sema::emit_bin_op(const sema::bin_op& b) {
         // if (b.op == "%") return isUnsigned ? builder_->CreateURem(lhs, rhs)
         //                                    : builder_->CreateSRem(lhs, rhs);
     } else if (lhs->getType()->isHalfTy() && rhs->getType()->isHalfTy()) {
+        if (b.op == "+") return builder_->CreateFAdd(lhs, rhs);
+        if (b.op == "-") return builder_->CreateFSub(lhs, rhs);
+        if (b.op == "*") return builder_->CreateFMul(lhs, rhs);
+        if (b.op == "/") return builder_->CreateFDiv(lhs, rhs);
+    } else if (lhs->getType()->isFloatTy() && rhs->getType()->isFloatTy()) {
         if (b.op == "+") return builder_->CreateFAdd(lhs, rhs);
         if (b.op == "-") return builder_->CreateFSub(lhs, rhs);
         if (b.op == "*") return builder_->CreateFMul(lhs, rhs);
@@ -382,6 +410,7 @@ llvm::Type* ir_gen_from_sema::to_llvm_type(const type_ref& t) const {
         case type::kind_enum::u64:
     		return llvm::Type::getInt64Ty(ctx_);
         case type::kind_enum::f16: return llvm::Type::getHalfTy(ctx_);
+        case type::kind_enum::f32: return llvm::Type::getFloatTy(ctx_);
         case type::kind_enum::unit:
         case type::kind_enum::noreturn:
     		return llvm::Type::getVoidTy(ctx_);
@@ -441,7 +470,11 @@ llvm::Constant* ir_gen_from_sema::to_llvm_const(const value& v) const {
             llvm::APFloat apf(llvm::APFloat::IEEEhalf(), llvm::APInt(16, h.bits));
             return llvm::ConstantFP::get(llvm::Type::getHalfTy(ctx_), apf);
         }
-
+	    case type::kind_enum::f32: {
+	        const cl_f32 h = std::get<cl_f32>(v.v);
+	        llvm::APFloat apf(llvm::APFloat::IEEEsingle(), llvm::APInt(32, h.bits));
+	        return llvm::ConstantFP::get(llvm::Type::getFloatTy(ctx_), apf);
+	    }
         case type::kind_enum::unit:
 		case type::kind_enum::noreturn:
 			throw std::runtime_error("toLlvmConst: unit/noreturn has no value");

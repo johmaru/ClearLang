@@ -43,14 +43,11 @@ class ir_gen_visitor : public ClearLanguageBaseVisitor {
         [[nodiscard]] llvm::Type* to_llvm_type(const type_ref& t) const;
         [[nodiscard]] llvm::Constant* to_llvm_constant(const value& v) const;
 
-        llvm::Value* emit_f16_bin_op(const std::string& op, llvm::Value* lhs, llvm::Value* rhs) const;
-
         static llvm::Function* declare_function(const function_value& fv);
         llvm::Function* get_function_by_name(const std::string& name);
         void enter_function(llvm::Function* fn);
         void leave_function();
 
-        llvm::Value* ensure_integer_bin_op(llvm::Value* lhs, llvm::Value* rhs, const std::string& op) const;
         [[noreturn]] static void not_implemented(const std::string& what);
 
     private:

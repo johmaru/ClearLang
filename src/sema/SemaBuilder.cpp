@@ -11,6 +11,7 @@
 
 #include "../core/CLType.h"
 #include "../core/CLType.h"
+#include "../core/CLType.h"
 
 using sema::expr; using sema::literal; using sema::var_ref;
 using sema::unary; using sema::bin_op; using sema::block;
@@ -28,6 +29,7 @@ sema_builder::sema_builder() : mod_(std::make_shared<sema::module>()) {
     type_scopes_.back().emplace("i64", type_ref::builtin_type(type{type::kind_enum::i64}));
     type_scopes_.back().emplace("u64", type_ref::builtin_type(type{type::kind_enum::u64}));
     type_scopes_.back().emplace("f16", type_ref::builtin_type(type{type::kind_enum::f16}));
+    type_scopes_.back().emplace("f32", type_ref::builtin_type(type{ type::kind_enum::f32 }));
     type_scopes_.back().emplace("noreturn", type_ref::builtin_type(type{type::kind_enum::noreturn}));
     type_scopes_.back().emplace("unit", type_ref::builtin_type(type{type::kind_enum::unit}));
 	type_scopes_.back().emplace("()", type_ref::builtin_type(type{ type::kind_enum::unit }));
@@ -76,6 +78,13 @@ sema_builder::sema_builder() : mod_(std::make_shared<sema::module>()) {
         sig->param_types.push_back(type_ref::builtin_type((type{ type::kind_enum::f16 })));
         sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
         func_sigs_["__cl_f16_printfn"] = sig;
+    }
+
+    {
+        const auto sig = std::make_shared<function_sig>();
+        sig->param_types.push_back(type_ref::builtin_type((type{ type::kind_enum::f32 })));
+        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
+        func_sigs_["__cl_f32_printfn"] = sig;
     }
 
     {
@@ -184,12 +193,12 @@ std::any sema_builder::visitIntLiteral(ClearLanguageParser::IntLiteralContext* c
 
 std::any sema_builder::visitFloatLiteral(ClearLanguageParser::FloatLiteralContext* ctx) {
     const auto node = std::make_shared<literal>();
-    node->type = type_ref::builtin_type(type{type::kind_enum::f16});
+    node->type = type_ref::builtin_type(type{type::kind_enum::f32});
     const std::string tok = ctx->FLOAT()->getText();
-    const llvm::APFloat ap(llvm::APFloat::IEEEhalf(), tok);
-    if (ap.isInfinity()) throw std::runtime_error("f16: Out of range" + tok);
-    const uint16_t bits = static_cast<uint16_t>(ap.bitcastToAPInt().getZExtValue());
-    cl_half h; h.bits = bits;
+    const llvm::APFloat ap(llvm::APFloat::IEEEsingle(), tok);
+    if (ap.isInfinity()) throw std::runtime_error("f32: Out of range" + tok);
+    const uint32_t bits = static_cast<uint32_t>(ap.bitcastToAPInt().getZExtValue());
+    cl_f32 h; h.bits = bits;
 
     node->value = value(node->type, h, false);
     return std::static_pointer_cast<expr>(node);
@@ -343,7 +352,7 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
         case type::kind_enum::i32: case type::kind_enum::u32:
         case type::kind_enum::i64: case type::kind_enum::u64:
             return true;
-        case type::kind_enum::string: case type::kind_enum::f16: case type::kind_enum::noreturn: case type::kind_enum::unit:
+        case type::kind_enum::string: case type::kind_enum::f16: case::type::kind_enum::f32: case type::kind_enum::noreturn: case type::kind_enum::unit:
             return false;
         }
         return false;
@@ -359,7 +368,7 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
 			case type::kind_enum::u32: return "__cl_parse_u32";
 			case type::kind_enum::i64: return "__cl_parse_i64";
 			case type::kind_enum::u64: return "__cl_parse_u64";
-	    case type::kind_enum::string: case type::kind_enum::f16: case type::kind_enum::noreturn: case type::kind_enum::unit:
+            case type::kind_enum::string: case type::kind_enum::f16: case type::kind_enum::f32: case type::kind_enum::noreturn: case type::kind_enum::unit:
 			return nullptr;
 	    }
 		return nullptr;
@@ -421,7 +430,9 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
 			bool ok = false;
             if (is_int_kind(src_k) && is_int_kind(dst_k)) ok = true;
 			if (is_int_kind(src_k) && dst_k == type::kind_enum::f16) ok = true;
+            if (is_int_kind(src_k) && dst_k == type::kind_enum::f32) ok = true;
             if (src_k == type::kind_enum::f16 && is_int_kind(dst_k)) ok = true;
+            if (src_k == type::kind_enum::f32 && is_int_kind(dst_k)) ok = true;
 
             if (src_k == type::kind_enum::string || dst_k == type::kind_enum::string) ok = false;
 
@@ -505,7 +516,9 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
             bool ok = false;
             if (is_int_kind(src_k) && is_int_kind(dst_k)) ok = true;
             if (is_int_kind(src_k) && dst_k == type::kind_enum::f16) ok = true;
+            if (is_int_kind(src_k) && dst_k == type::kind_enum::f32) ok = true;
             if (src_k == type::kind_enum::f16 && is_int_kind(dst_k)) ok = true;
+            if (src_k == type::kind_enum::f32 && is_int_kind(dst_k)) ok = true;
 
             if (src_k == type::kind_enum::string || dst_k == type::kind_enum::string) ok = false;
 

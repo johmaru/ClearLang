@@ -1,10 +1,10 @@
 #include <atomic>
 #include <cstdint>
-#include <cstdlib>
 #include <cerrno>
-#include <cstring>
 #include <limits>
 #include <cstdio>
+#include <sstream>
+#include <iomanip>
 
 static std::atomic<int32_t> g_exit_code{0};
 
@@ -16,7 +16,7 @@ static std::atomic<int32_t> g_exit_code{0};
 #define CL_API extern "C" __declspec(dllexport)
 #else
 #include <unistd.h>
-#define CL_API extern "C"
+#define CL_API extern "C" __attribute__((visibility("default")))
 #endif
 
 CL_API void __cl_set_exit_code(const int32_t c) {
@@ -46,131 +46,71 @@ CL_API void __cl_printf(const char* s)
 
 CL_API void __cl_i8_printf(const int8_t i)
 {
-    char buf[5];
-    char* p = buf;
+    const std::string buf = std::to_string(i);
 
-    int v = static_cast<int>(i);
-    if (v < 0) {
-        *p++ = '-';
-        v = -v;
-    }
-
-    char tmp[3];
-    int idx = 0;
-    do {
-        tmp[idx++] = static_cast<char>('0' + (v % 10));
-        v /= 10;
-    } while (v > 0);
-
-    while (idx > 0) {
-        *p++ = tmp[--idx];
-    }
-
-    const DWORD len = static_cast<DWORD>(p - buf);
     const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!h || h == INVALID_HANDLE_VALUE) return;
     DWORD written = 0;
-    (void)WriteFile(h, buf, len, &written, nullptr);
+    (void)WriteFile(h, buf.c_str(), static_cast<DWORD>(buf.length()), &written, nullptr);
 }
 
 CL_API void __cl_i8_printfn(const int8_t i) {
 
-    char buf[5];
-    char* p = buf;
+    const std::string buf = std::to_string(i).append("\n");
 
-    int v = static_cast<int>(i);
-    if (v < 0) {
-        *p++ = '-';
-        v = -v;
-    }
-
-    char tmp[3];
-    int idx = 0;
-    do {
-        tmp[idx++] = static_cast<char>('0' + (v % 10));
-        v /= 10;
-    } while (v > 0);
-
-    while (idx > 0) {
-        *p++ = tmp[--idx];
-    }
-
-    *p++ = '\n';
-
-    const DWORD len = static_cast<DWORD>(p - buf);
     const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!h || h == INVALID_HANDLE_VALUE) return;
     DWORD written = 0;
-    (void)WriteFile(h, buf, len, &written, nullptr);
+    (void)WriteFile(h, buf.c_str(), static_cast<DWORD>(buf.length()), &written, nullptr);
 
 }
 
 CL_API void __cl_u8_printfn(uint8_t ui)
 {
-    char buf[4];
-    char* p = buf;
+    const std::string buf = std::to_string(ui).append("\n");
 
-    char tmp[3];
-    int idx = 0;
-
-    do {
-        tmp[idx++] = static_cast<char>('0' + (ui % 10));
-        ui /= 10;
-    } while (ui > 0);
-
-    while (idx > 0) {
-        *p++ = tmp[--idx];
-    }
-
-    *p++ = '\n';
-
-    const DWORD len = static_cast<DWORD>(p - buf);
     const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!h || h == INVALID_HANDLE_VALUE) return;
     DWORD written = 0;
-    (void)WriteFile(h, buf, len, &written, nullptr);
+    (void)WriteFile(h, buf.c_str(), static_cast<DWORD>(buf.length()), &written, nullptr);
 }
 
 CL_API void __cl_i16_printfn(const int16_t i) {
 
-    char buf[7];
-    char* p = buf;
+    const std::string buf = std::to_string(i).append("\n");
 
-    int v = static_cast<int>(i);
-    if (v < 0) {
-        *p++ = '-';
-        v = -v;
-    }
-
-    char tmp[6];
-    int idx = 0;
-    do {
-        tmp[idx++] = static_cast<char>('0' + (v % 10));
-        v /= 10;
-    } while (v > 0);
-
-    while (idx > 0) {
-        *p++ = tmp[--idx];
-    }
-
-    *p++ = '\n';
-
-    const DWORD len = static_cast<DWORD>(p - buf);
     const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!h || h == INVALID_HANDLE_VALUE) return;
     DWORD written = 0;
-    (void)WriteFile(h, buf, len, &written, nullptr);
+    (void)WriteFile(h, buf.c_str(), static_cast<DWORD>(buf.length()), &written, nullptr);
 }
 
-CL_API void __cl_f16_printfn(float f) {
-    char buf[64];
-    const int len = std::snprintf(buf, sizeof(buf), "%.5g\n", static_cast<double>(f));
-    if (len < 0) return;
+CL_API void __cl_f16_printfn(const float f) {
+
+    std::stringstream ss;
+
+    ss << std::setprecision(5) << std::defaultfloat << f << "\n";
+
+    const std::string buf = ss.str();
 
     const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!h || h == INVALID_HANDLE_VALUE) return;
     DWORD written = 0;
-    (void)WriteFile(h, buf, static_cast<DWORD>(len), &written, nullptr);
+    (void)WriteFile(h, buf.c_str(), static_cast<DWORD>(buf.length()), &written, nullptr);
+}
+
+CL_API void __cl_f32_printfn(const float f) {
+
+    std::stringstream ss;
+
+    ss << std::setprecision(5) << std::defaultfloat << f << "\n";
+
+    const std::string buf = ss.str();
+
+    const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!h || h == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    (void)WriteFile(h, buf.c_str(), static_cast<DWORD>(buf.length()), &written, nullptr);
 }
 
 #else
@@ -183,52 +123,17 @@ CL_API void __cl_printf(const char* s) {
 
 CL_API void __cl_i8_printf(int8_t i)
 {
-    char buf[5];
-    char* p = buf;
+    const std::string buf = std::to_string(i);
 
-    int v = static_cast<int>(i);
-    if (v < 0) {
-        *p++ = '-';
-        v = -v;
-    }
-
-    char tmp[3];
-    int idx = 0;
-    do {
-        tmp[idx++] = static_cast<char>('0' + (v % 10));
-        v /= 10;
-    } while (v > 0);
-
-    while (idx > 0) {
-        *p++ = tmp[--idx];
-    }
-
-    *p++ = '\n';
-
-    const size_t len = static_cast<size_t>(p - buf);
-    size_t written = write(STDOUT_FILENO, buf, len);
+    size_t written = write(STDOUT_FILENO, buf, buf.length());
     (void)written;
 }
 
 CL_API void __cl_u8_printfn(uint8_t u)
 {
-    char buf[4];
-    char* p = buf;
+    const std::string buf = std::to_string(u).append("\n");
 
-    char tmp[3];
-    int idx = 0;
-    do {
-        tmp[idx++] = static_cast<char>('0' + (u % 10));
-        u = static_cast<uint8_t>(u / 10);
-    } while (u > 0);
-
-    while (idx > 0) {
-        *p++ = tmp[--idx];
-    }
-    *p++ = '\n';
-
-    const size_t len = static_cast<size_t>(p - buf);
-    size_t written = write(STDOUT_FILENO, buf, len);
+    size_t written = write(STDOUT_FILENO, buf, buf.length());
     (void)written;
 }
 #endif

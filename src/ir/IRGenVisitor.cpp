@@ -89,6 +89,8 @@ llvm::Type* ir_gen_visitor::to_llvm_type(const type_ref& t) const {
             return llvm::Type::getInt64Ty(ctx_);
         case type::kind_enum::f16:
             return llvm::Type::getHalfTy(ctx_);
+		case type::kind_enum::f32:
+			return llvm::Type::getFloatTy(ctx_);
         case type::kind_enum::unit:
         case type::kind_enum::noreturn:
             return llvm::Type::getVoidTy(ctx_);
@@ -153,19 +155,17 @@ llvm::Constant* ir_gen_visitor::to_llvm_constant(const value& v) const {
             llvm::APFloat apf(llvm::APFloat::IEEEhalf(), llvm::APInt(16, h.bits));
             return llvm::ConstantFP::get(llvm::Type::getHalfTy(ctx_), apf);
         }
+        case type::kind_enum::f32: {
+            if (!std::holds_alternative<cl_f32>(v.v)) not_implemented("toLlvmConstant: non-F32 type");
+            const cl_f32 h = std::get<cl_f32>(v.v);
+            llvm::APFloat apf(llvm::APFloat::IEEEsingle(), llvm::APInt(32, h.bits));
+            return llvm::ConstantFP::get(llvm::Type::getFloatTy(ctx_), apf);
+        }
         case type::kind_enum::unit:
         case type::kind_enum::noreturn:
             not_implemented("toLlvmConstant: UNIT/NORETURN have no value representation");
     }
 	llvm_unreachable("toLlvmConstant: unknown kind");
-}
-
-llvm::Value* ir_gen_visitor::emit_f16_bin_op(const std::string& op, llvm::Value* lhs, llvm::Value* rhs) const {
-    if (op == "+") return builder_->CreateFAdd(lhs, rhs, "f16addtmp");
-    if (op == "-") return builder_->CreateFSub(lhs, rhs, "f16subtmp");
-    if (op == "*") return builder_->CreateFMul(lhs, rhs, "f16multmp");
-    if (op == "/") return builder_->CreateFDiv(lhs, rhs, "f16divtmp");
-    throw std::runtime_error("unsupported f16 binary operator: " + op);
 }
 
 llvm::Function* ir_gen_visitor::declare_function(const function_value& fv) {
@@ -180,20 +180,6 @@ void ir_gen_visitor::enter_function(llvm::Function* fn) {
 }
 void ir_gen_visitor::leave_function() {
     if (!var_scopes_.empty()) var_scopes_.pop_back();
-}
-
-llvm::Value* ir_gen_visitor::ensure_integer_bin_op(llvm::Value* lhs, llvm::Value* rhs, const std::string& op) const {
-    if (!lhs->getType()->isIntegerTy() || !rhs->getType()->isIntegerTy()) {
-        throw std::runtime_error("integer binary operator applied to non-integer operands");
-    }
-    if (lhs->getType() != rhs->getType()) {
-        throw std::runtime_error("integer binary operator applied to mismatched operand types");
-    }
-    if (op == "+") return builder_->CreateAdd(lhs, rhs, "addtmp");
-    if (op == "-") return builder_->CreateSub(lhs, rhs, "subtmp");
-    if (op == "*") return builder_->CreateMul(lhs, rhs, "multmp");
-    if (op == "/") return builder_->CreateSDiv(lhs, rhs, "divtmp");
-    throw std::runtime_error("unsupported integer binary operator: " + op);
 }
 [[noreturn]] void ir_gen_visitor::not_implemented(const std::string& what) {
     throw std::runtime_error("not implemented: " + what);

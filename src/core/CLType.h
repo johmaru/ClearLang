@@ -24,9 +24,14 @@ struct cl_half {
     cl_half() = default;
 };
 
+struct cl_f32 {
+    uint32_t bits{ 0 };
+    cl_f32() = default;
+};
+
 
 struct type {
-    enum class kind_enum : std::int8_t { i8, u8, i16, u16, i32, u32, i64, u64, f16, noreturn, unit, string };
+    enum class kind_enum : std::int8_t { i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, noreturn, unit, string };
     kind_enum kind;
 
     [[nodiscard]] bool is_unsigned() const {
@@ -44,6 +49,7 @@ struct type {
 	        case kind_enum::u32:
 	        case kind_enum::u64:
 	        case kind_enum::f16:
+			case kind_enum::f32:
 	        case kind_enum::noreturn:
 	        case kind_enum::unit:
 	        case kind_enum::string:
@@ -63,35 +69,11 @@ struct type {
 	        case kind_enum::i32:
 	        case kind_enum::i64:
 	        case kind_enum::f16:
+			case kind_enum::f32:
 	        case kind_enum::noreturn:
 	        case kind_enum::unit:
 	        case kind_enum::string:
 				throw std::runtime_error("type is not unsigned");
-        }
-		throw std::runtime_error("unreachable");
-    }
-
-    [[nodiscard]] std::pair<float, float> float_bounds() const {
-        switch (kind) {
-            case kind_enum::f16: {
-                #if defined(CL_HAVE_STD_FLOAT16)
-                    return { -65504.0f, 65504.0f };
-                #else
-                    return { -65504.0f, 65504.0f };
-                #endif
-            }
-        case kind_enum::i8:
-        case kind_enum::u8:
-        case kind_enum::i16:
-        case kind_enum::u16:
-        case kind_enum::i32:
-        case kind_enum::u32:
-        case kind_enum::i64:
-        case kind_enum::u64:
-        case kind_enum::noreturn:
-        case kind_enum::unit:
-        case kind_enum::string:
-			 throw std::runtime_error("type is not float");
         }
 		throw std::runtime_error("unreachable");
     }
@@ -119,6 +101,7 @@ struct type {
         if (s == "i64") return {kind_enum::i64};
         if (s == "u64") return {kind_enum::u64};
         if (s == "f16") return {kind_enum::f16};
+        if (s == "f32") return { kind_enum::f32 };
         if (s == "noreturn") return {kind_enum::noreturn};
         if (s == "unit" || s == "()") return {kind_enum::unit};
 		if (s == "string") return {kind_enum::string };
@@ -129,7 +112,7 @@ struct type {
 struct function_sig;
 
 struct type_ref {
-    enum class tag { builtin, function } tag = tag::builtin;
+    enum class tag : std::uint8_t { builtin, function } tag = tag::builtin;
 
     type builtin{type::kind_enum::i32}; // default
 
@@ -171,14 +154,14 @@ struct function_value {
 
 struct value {
     type_ref type;
-    std::variant<int64_t, uint64_t, std::monostate, function_value, cl_half, std::string> v;
+    std::variant<int64_t, uint64_t, std::monostate, function_value, cl_half, std::string, cl_f32> v;
     bool is_untyped_int = false;
     value() = default;
-    value(const type_ref& type, std::variant<int64_t, uint64_t, std::monostate, function_value, cl_half, std::string> value, bool cond);
+    value(const type_ref& type, std::variant<int64_t, uint64_t, std::monostate, function_value, cl_half, std::string, cl_f32> value, bool cond);
 };
 
 inline value::value(const type_ref& type,
-    std::variant<int64_t, uint64_t, std::monostate, function_value, cl_half, std::string> value,
+    std::variant<int64_t, uint64_t, std::monostate, function_value, cl_half, std::string, cl_f32> value,
     bool cond) : type(type), v(std::move(value)), is_untyped_int(cond) {}
 
 
@@ -203,6 +186,7 @@ inline const char* builtin_type_name(const type& t) {
         case type::kind_enum::i64: return "i64";
         case type::kind_enum::u64: return "u64";
         case type::kind_enum::f16: return "f16";
+        case type::kind_enum::f32: return "f32";
         case type::kind_enum::noreturn: return "noreturn";
         case type::kind_enum::unit: return "unit";
 		case type::kind_enum::string: return "string";
