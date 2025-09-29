@@ -31,7 +31,7 @@ struct cl_f32 {
 
 
 struct type {
-    enum class kind_enum : std::int8_t { i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, noreturn, unit, string };
+    enum class kind_enum : std::int8_t { i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, noreturn, unit, string, boolean };
     kind_enum kind;
 
     [[nodiscard]] bool is_unsigned() const {
@@ -53,6 +53,7 @@ struct type {
 	        case kind_enum::noreturn:
 	        case kind_enum::unit:
 	        case kind_enum::string:
+			case kind_enum::boolean:
 				throw std::runtime_error("type is not signed");
         }
 		throw std::runtime_error("unreachable");
@@ -73,6 +74,7 @@ struct type {
 	        case kind_enum::noreturn:
 	        case kind_enum::unit:
 	        case kind_enum::string:
+			case kind_enum::boolean:
 				throw std::runtime_error("type is not unsigned");
         }
 		throw std::runtime_error("unreachable");
@@ -105,6 +107,7 @@ struct type {
         if (s == "noreturn") return {kind_enum::noreturn};
         if (s == "unit" || s == "()") return {kind_enum::unit};
 		if (s == "string") return {kind_enum::string };
+        if (s == "bool") return { kind_enum::boolean };
         throw std::runtime_error("unknown type: " + s);
     }
 };
@@ -190,6 +193,7 @@ inline const char* builtin_type_name(const type& t) {
         case type::kind_enum::noreturn: return "noreturn";
         case type::kind_enum::unit: return "unit";
 		case type::kind_enum::string: return "string";
+        case type::kind_enum::boolean: return "bool";
     }
     return "?";
 }

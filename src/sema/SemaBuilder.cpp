@@ -12,10 +12,50 @@
 #include "../core/CLType.h"
 #include "../core/CLType.h"
 #include "../core/CLType.h"
+#include "../core/CLType.h"
+#include "../core/CLType.h"
 
 using sema::expr; using sema::literal; using sema::var_ref;
 using sema::unary; using sema::bin_op; using sema::block;
 using sema::stmt_var_decl; using sema::stmt_return; using sema::function;
+
+namespace {
+	bool is_int_kind(const type::kind_enum k) {
+        switch (k) {
+	        case type::kind_enum::i8: case type::kind_enum::u8:
+	        case type::kind_enum::i16: case type::kind_enum::u16:
+	        case type::kind_enum::i32: case type::kind_enum::u32:
+	        case type::kind_enum::i64: case type::kind_enum::u64:
+	            return true;
+	        default: return false;
+        }
+    }
+
+    bool is_bool_kind(const type::kind_enum k) {
+	    switch (k) {
+	    case type::kind_enum::boolean:
+            return true;
+
+        default: return false;
+	    }
+	}
+
+    bool is_num_kind(const type::kind_enum k) {
+        switch (k) {
+	        case type::kind_enum::i8: case type::kind_enum::u8:
+	        case type::kind_enum::i16: case type::kind_enum::u16:
+	        case type::kind_enum::i32: case type::kind_enum::u32:
+	        case type::kind_enum::i64: case type::kind_enum::u64:
+	        case type::kind_enum::f16: case type::kind_enum::f32:
+	            return true;
+	        default: return false;
+        }
+    }
+
+    type_ref boolean_type() {
+        return type_ref::builtin_type(type{ type::kind_enum::boolean });
+    }
+}
 
 sema_builder::sema_builder() : mod_(std::make_shared<sema::module>()) {
     type_scopes_.emplace_back();
@@ -34,6 +74,7 @@ sema_builder::sema_builder() : mod_(std::make_shared<sema::module>()) {
     type_scopes_.back().emplace("unit", type_ref::builtin_type(type{type::kind_enum::unit}));
 	type_scopes_.back().emplace("()", type_ref::builtin_type(type{ type::kind_enum::unit }));
 	type_scopes_.back().emplace("string", type_ref::builtin_type(type{ type::kind_enum::string }));
+    type_scopes_.back().emplace("bool", type_ref::builtin_type(type{ type::kind_enum::boolean }));
     var_types_.emplace_back();
 
 
@@ -214,6 +255,72 @@ std::any sema_builder::visitUnaryMinus(ClearLanguageParser::UnaryMinusContext* c
     return std::static_pointer_cast<expr>(node);
 }
 
+std::any sema_builder::visitOrExpr(ClearLanguageParser::OrExprContext* ctx) {
+    auto cur = std::any_cast<std::shared_ptr<expr>>(visit(ctx->left));
+
+    if (ctx->right.empty()) return cur;
+
+    if (!(cur->type.is_builtin() && is_int_kind(cur->type.builtin.kind))) throw std::runtime_error("operator 'or' expects integer operands (left)");
+
+    for (size_t i = 0; i < ctx->right.size(); i++) {
+        const auto rhs = std::any_cast<std::shared_ptr<expr>>(visit(ctx->right[i]));
+        if (!(rhs->type.is_builtin() && is_int_kind(rhs->type.builtin.kind))) throw std::runtime_error("operator or expects integer operands (right)");
+
+        const auto node = std::make_shared<bin_op>();
+        node->op = "or";
+        node->lhs = cur;
+        node->rhs = rhs;
+        node->type = boolean_type();
+        cur = node;
+    }
+    return cur;
+}
+
+std::any sema_builder::visitAndExpr(ClearLanguageParser::AndExprContext* ctx) {
+    auto cur = std::any_cast<std::shared_ptr<expr>>(visit(ctx->left));
+
+    if (ctx->right.empty()) return cur;
+
+    if (!(cur->type.is_builtin() && is_int_kind(cur->type.builtin.kind))) throw std::runtime_error("operator 'and' expects integer operands (left)");
+
+    for (size_t i = 0; i < ctx->right.size(); i++) {
+        const auto rhs = std::any_cast<std::shared_ptr<expr>>(visit(ctx->right[i]));
+        if (!(rhs->type.is_builtin() && is_int_kind(rhs->type.builtin.kind))) throw std::runtime_error("operator 'and' expects integer operands (right)");
+
+        const auto node = std::make_shared<bin_op>();
+        node->op = "and";
+        node->lhs = cur;
+        node->rhs = rhs;
+        node->type = boolean_type();
+        cur = node;
+    }
+    return cur;
+}
+
+std::any sema_builder::visitEqualExpr(ClearLanguageParser::EqualExprContext* ctx) {
+    auto cur = std::any_cast<std::shared_ptr<expr>>(visit(ctx->left));
+
+    for (size_t i = 0; i < ctx->right.size(); i++) {
+        const auto rhs = std::any_cast<std::shared_ptr<expr>>(visit(ctx->right[i]));
+        const std::string op = ctx->op[i]->getText();
+        if (!(cur->type.is_builtin() && rhs->type.is_builtin())) throw std::runtime_error("equal operator requires builtin types");
+        const auto lk = cur->type.builtin.kind;
+        const auto rk = rhs->type.builtin.kind;
+
+        if (!(is_num_kind(lk) && lk == rk)) throw std::runtime_error("type mismatch in equal op (only num same types)");
+
+        const auto node = std::make_shared<bin_op>();
+        node->op = op;
+        node->lhs = cur;
+        node->rhs = rhs;
+        node->type = boolean_type();
+        cur = node;
+    }
+    return cur;
+}
+
+
+
 std::any sema_builder::visitAddExpr(ClearLanguageParser::AddExprContext* ctx) {
     auto cur = std::any_cast<std::shared_ptr<expr>>(visit(ctx->left));
     for (size_t i = 0; i < ctx->right.size(); ++i) {
@@ -279,17 +386,54 @@ std::any sema_builder::visitBlock(ClearLanguageParser::BlockContext* ctx) {
             blk->statements.push_back(std::any_cast<std::shared_ptr<stmt_return>>(visit(sr)));
         } else if (auto* vd = dynamic_cast<ClearLanguageParser::StmtVarDeclContext*>(s)) {
             blk->statements.push_back(std::any_cast<std::shared_ptr<stmt_var_decl>>(visit(vd)));
-        }
-        else if (auto* se = dynamic_cast<ClearLanguageParser::StmtExprContext*>(s)) {
+        } else if (auto* se = dynamic_cast<ClearLanguageParser::StmtExprContext*>(s)) {
 			blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt_expr>>(visit(se)));
-        }
-    	else {
+        } else if (auto* si = dynamic_cast<ClearLanguageParser::StmtIfContext*>(s)) {
+            blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt_if>>(visit(si)));
+        } else {
             // currently pass expression statements
             visit(s);
         }
     }
     return blk;
 }
+
+std::any sema_builder::visitIfBlock(ClearLanguageParser::IfBlockContext* ctx) {
+    const auto cond = std::any_cast<std::shared_ptr<expr>>(visit(ctx->expr()));
+
+    const bool is_bool = cond->type.is_builtin() && is_bool_kind(cond->type.builtin.kind);
+    const bool is_int = cond->type.is_builtin() && is_int_kind(cond->type.builtin.kind);
+
+    if (!(is_bool || is_int)) throw std::runtime_error("if condition must be boolean or int expression");
+
+    auto node = std::make_shared<sema::stmt_if>();
+    node->cond = cond;
+    node->then_blk = std::any_cast<std::shared_ptr<block>>(visit(ctx->block()));
+    node->else_blk = nullptr;
+    return node;
+}
+
+std::any sema_builder::visitIfSingle(ClearLanguageParser::IfSingleContext* ctx) {
+    const auto cond = std::any_cast<std::shared_ptr<expr>>(visit(ctx->expr()));
+    
+    const bool is_bool = cond->type.is_builtin() && is_bool_kind(cond->type.builtin.kind);
+    const bool is_int = cond->type.is_builtin() && is_int_kind(cond->type.builtin.kind);
+
+    if (!(is_bool || is_int)) throw std::runtime_error("if condition must be boolean or int expression");
+
+    const auto then_blk = std::make_shared<block>();
+
+    auto any_stmt = visit(ctx->stmt());
+    then_blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt>>(any_stmt));
+
+    auto node = std::make_shared<sema::stmt_if>();
+    node->cond = cond;
+    node->then_blk = then_blk;
+    node->else_blk = nullptr;
+    return node;
+}
+
+
 
 std::any sema_builder::visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext* ctx) {
     auto* vd = ctx->varDecl();
@@ -579,10 +723,18 @@ static std::string unescape_string_token(const std::string& tok) {
     return out;
 }
 
-std::any sema_builder::visitStringLiteral(ClearLanguageParser::StringLiteralContext* context) {
+std::any sema_builder::visitStringLiteral(ClearLanguageParser::StringLiteralContext* ctx) {
 	const auto node = std::make_shared<literal>();
 	node->type = type_ref::builtin_type(type{ type::kind_enum::string });
-	const std::string raw = context->STRING()->getText();
+	const std::string raw = ctx->STRING()->getText();
     node->value = make_string(unescape_string_token(raw));
 	return std::static_pointer_cast<expr>(node);
+}
+
+std::any sema_builder::visitBoolLiteral(ClearLanguageParser::BoolLiteralContext* ctx) {
+    const auto node = std::make_shared<literal>();
+    node->type = boolean_type();
+    const bool is_true(ctx->TRUE() != nullptr);
+    node->value = value{ node->type, static_cast<int64_t>(is_true ? 1 : 0), false };
+    return std::static_pointer_cast<expr>(node);
 }

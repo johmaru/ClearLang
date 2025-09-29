@@ -5,9 +5,9 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/GlobalVariable.h>
 
-ir_gen_from_sema::ir_gen_from_sema(llvm::LLVMContext& ctx, std::string module_name)
+ir_gen_from_sema::ir_gen_from_sema(llvm::LLVMContext& ctx, const std::string& module_name)
   : ctx_(ctx),
-    mod_(std::make_unique<llvm::Module>(std::move(module_name), ctx_)),
+    mod_(std::make_unique<llvm::Module>(module_name, ctx_)),
     builder_(std::make_unique<llvm::IRBuilder<>>(ctx_)) {}
 
 llvm::Module& ir_gen_from_sema::module() const { return *mod_; }
@@ -125,6 +125,19 @@ void ir_gen_from_sema::emit_entry_shim(const sema::module& m) const {
         builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 5));
         return;
     }
+
+    if (ret_ty->isIntegerTy(1)) {
+        llvm::Value* v = builder_->CreateCall(entry, {});
+
+        store_tag(8);
+        auto* p8 = builder_->CreateBitCast(data_ptr, i8_ty->getPointerTo());
+
+        v = builder_->CreateZExt(v, i8_ty);
+        builder_->CreateStore(v, p8);
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 2));
+        return;
+    }
+
     builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 0));
 }
 
@@ -199,6 +212,46 @@ void ir_gen_from_sema::emit_stmt(const sema::stmt& s) {
             auto* v = emit_expr(*ret->value);
             builder_->CreateRet(v);
         }
+    } else if (auto* sif = dynamic_cast<const sema::stmt_if*>(&s)) {
+        llvm::Value* cond_v = emit_expr(*sif->cond);
+        llvm::Value* cond_i1;
+
+        if (cond_v->getType()->isIntegerTy(1)) {
+            cond_i1 = cond_v;
+        } else if (cond_v->getType()->isIntegerTy()) {
+            cond_i1 = builder_->CreateICmpNE(cond_v, llvm::ConstantInt::get(cond_v->getType(), 0));
+        } else if (cond_v->getType()->isHalfTy() || cond_v->getType()->isFloatTy()) {
+            cond_i1 = builder_->CreateFCmpONE(cond_v, llvm::ConstantFP::get(cond_v->getType(), 0.0));
+        } else if (cond_v->getType()->isPointerTy()) {
+            cond_i1 = builder_->CreateICmpNE(cond_v, llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(cond_v->getType())));
+        } else {
+            throw std::runtime_error("if condition: unsupported type");
+        }
+
+        llvm::Function* fn = builder_->GetInsertBlock()->getParent();
+        auto* then_blk = llvm::BasicBlock::Create(ctx_, "if.then", fn);
+        llvm::BasicBlock* else_blk = nullptr;
+        auto* cont_blk = llvm::BasicBlock::Create(ctx_, "if.end", fn);
+
+        if (sif->else_blk) {
+            else_blk = llvm::BasicBlock::Create(ctx_, "if.else", fn);
+            builder_->CreateCondBr(cond_i1, then_blk, else_blk);
+        } else {
+            builder_->CreateCondBr(cond_i1, then_blk, cont_blk);
+        }
+
+        builder_->SetInsertPoint(then_blk);
+        emit_block(*sif->then_blk);
+        if (!builder_->GetInsertBlock()->getTerminator()) builder_->CreateBr(cont_blk);
+
+        if (else_blk) {
+            builder_->SetInsertPoint(else_blk);
+            emit_block(*sif->else_blk);
+            if (!builder_->GetInsertBlock()->getTerminator()) builder_->CreateBr(cont_blk);
+        }
+
+        builder_->SetInsertPoint(cont_blk);
+
     } else if (auto* se = dynamic_cast<const sema::stmt_expr*>(&s)) {
         (void)emit_expr(*se->expr);
     } else {
@@ -351,6 +404,26 @@ llvm::Value* ir_gen_from_sema::emit_unary(const sema::unary& u) {
 llvm::Value* ir_gen_from_sema::emit_bin_op(const sema::bin_op& b) {
     auto* lhs = emit_expr(*b.lhs);
     auto* rhs = emit_expr(*b.rhs);
+
+    if (b.op == "is" || b.op == "not") {
+        llvm::Value* cmp = nullptr;
+        if (lhs->getType()->isIntegerTy() && lhs->getType() == rhs->getType()) {
+            cmp = (b.op == "is") ? builder_->CreateICmpEQ(lhs, rhs)
+								 : builder_->CreateICmpNE(lhs, rhs);
+        } else if ((lhs->getType()->isFloatTy() && rhs->getType()->isFloatTy())) {
+            cmp = (b.op == "is") ? builder_->CreateFCmpOEQ(lhs, rhs)
+                                 : builder_->CreateFCmpONE(lhs, rhs);
+        } else throw std::runtime_error("emitBinOp: unsupported type for equal");
+
+        return cmp;
+    }
+
+    if (b.op == "and" || b.op == ("or")) {
+        if (!(lhs->getType()->isIntegerTy(1) && rhs->getType()->isIntegerTy(1))) throw std::runtime_error("emitBinOp(and | or): operands must be i1");
+        return (b.op == "and") ? builder_->CreateAnd(lhs, rhs)
+    	                       : builder_->CreateOr(lhs, rhs);
+    }
+
     if (lhs->getType()->isIntegerTy() && lhs->getType() == rhs->getType()) {
 
 		const bool is_unsigned = b.lhs->type.builtin.is_unsigned() && b.rhs->type.builtin.is_unsigned();
@@ -361,23 +434,16 @@ llvm::Value* ir_gen_from_sema::emit_bin_op(const sema::bin_op& b) {
         if (b.op == "/") return is_unsigned
             ? builder_->CreateUDiv(lhs, rhs)
             : builder_->CreateSDiv(lhs, rhs);
-		// TODO: mod, bitwise ops, shifts
-        // if (b.op == "%") return isUnsigned ? builder_->CreateURem(lhs, rhs)
-        //                                    : builder_->CreateSRem(lhs, rhs);
-    } else if (lhs->getType()->isHalfTy() && rhs->getType()->isHalfTy()) {
-        if (b.op == "+") return builder_->CreateFAdd(lhs, rhs);
-        if (b.op == "-") return builder_->CreateFSub(lhs, rhs);
-        if (b.op == "*") return builder_->CreateFMul(lhs, rhs);
-        if (b.op == "/") return builder_->CreateFDiv(lhs, rhs);
-    } else if (lhs->getType()->isFloatTy() && rhs->getType()->isFloatTy()) {
-        if (b.op == "+") return builder_->CreateFAdd(lhs, rhs);
-        if (b.op == "-") return builder_->CreateFSub(lhs, rhs);
-        if (b.op == "*") return builder_->CreateFMul(lhs, rhs);
-        if (b.op == "/") return builder_->CreateFDiv(lhs, rhs);
-    } else if (b.lhs->type.is_builtin() && b.rhs->type.is_builtin()
-         && b.lhs->type.builtin.kind == type::kind_enum::string
-         && b.rhs->type.builtin.kind == type::kind_enum::string) {
+        if (b.op == "%") return is_unsigned
+    		? builder_->CreateURem(lhs, rhs)
+    		: builder_->CreateSRem(lhs, rhs);
 
+    } else if (lhs->getType()->isHalfTy() && rhs->getType()->isHalfTy() || lhs->getType()->isFloatTy() && rhs->getType()->isFloatTy()) {
+        if (b.op == "+") return builder_->CreateFAdd(lhs, rhs);
+        if (b.op == "-") return builder_->CreateFSub(lhs, rhs);
+        if (b.op == "*") return builder_->CreateFMul(lhs, rhs);
+        if (b.op == "/") return builder_->CreateFDiv(lhs, rhs);
+    } else if (b.lhs->type.is_builtin() && b.rhs->type.is_builtin() && b.lhs->type.builtin.kind == type::kind_enum::string && b.rhs->type.builtin.kind == type::kind_enum::string) {
     	if (b.op != "+") {
             throw std::runtime_error("emitBinOp: unsupported string op (only +)");
         }
@@ -414,8 +480,10 @@ llvm::Type* ir_gen_from_sema::to_llvm_type(const type_ref& t) const {
         case type::kind_enum::unit:
         case type::kind_enum::noreturn:
     		return llvm::Type::getVoidTy(ctx_);
-    case type::kind_enum::string:
-		return llvm::Type::getInt8Ty(ctx_)->getPointerTo();
+		case type::kind_enum::string:
+			return llvm::Type::getInt8Ty(ctx_)->getPointerTo();
+		case type::kind_enum::boolean:
+			return  llvm::Type::getInt1Ty(ctx_);
     }
 	throw std::runtime_error("toLlvmType: unsupported kind");
 }
@@ -475,6 +543,16 @@ llvm::Constant* ir_gen_from_sema::to_llvm_const(const value& v) const {
 	        llvm::APFloat apf(llvm::APFloat::IEEEsingle(), llvm::APInt(32, h.bits));
 	        return llvm::ConstantFP::get(llvm::Type::getFloatTy(ctx_), apf);
 	    }
+		case type::kind_enum::boolean: {
+            bool b = false;
+
+
+            if (std::holds_alternative<int64_t>(v.v)) {
+                b = std::get<int64_t>(v.v) != 0;
+            } // unexpected uint64_t type
+
+            return llvm::ConstantInt::get(llvm::Type::getInt1Ty(ctx_), b);
+		}
         case type::kind_enum::unit:
 		case type::kind_enum::noreturn:
 			throw std::runtime_error("toLlvmConst: unit/noreturn has no value");

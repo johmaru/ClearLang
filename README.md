@@ -21,6 +21,18 @@ tools.cmake.cmaketoolchain:generator=Ninja
 tools.cmake.cmaketoolchain:user_presets=
 ```
 
+## Conan Profile
+```powershell
+[settings]
+arch=x86_64
+build_type=Release
+compiler=msvc
+compiler.cppstd=17
+compiler.runtime=dynamic
+compiler.version=194
+os=Windows
+```
+
 ## 1) Fetch dependencies (Conan)
 ```powershell
 conan install . -s build_type=Debug -of out/conan/ninja-debug -b missing

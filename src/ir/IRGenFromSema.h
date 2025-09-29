@@ -7,8 +7,7 @@
 
 class ir_gen_from_sema {
 public:
-    ir_gen_from_sema(llvm::LLVMContext& ctx, std::string module_name);
-
+	ir_gen_from_sema(llvm::LLVMContext& ctx, const std::string& module_name);
     [[nodiscard]] llvm::Module& module() const;
     void emit_module(const sema::module& m);
     // Transfer ownership of the underlying Module (for ORC JIT)

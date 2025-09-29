@@ -1,4 +1,4 @@
-Project tree snapshot (2025-09-28)
+Project tree snapshot (2025-09-29)
 
 Top-level directories:
 - .cache
@@ -11,6 +11,7 @@ Top-level directories:
 - cmake
 - grammar
 - out
+- out1
 - scripts
 - sema_readme
 - src
@@ -28,13 +29,10 @@ Top-level files:
 - README.md
 
 Key source files (src):
-- src\ast\CLVisitor.cpp
 - src\core\CLType.h
 - src\core\SemaUtils.h
 - src\ir\IRGenFromSema.cpp
 - src\ir\IRGenFromSema.h
-- src\ir\IRGenVisitor.cpp
-- src\ir\IRGenVisitor.h
 - src\llvm\Executer.cpp
 - src\llvm\Executer.h
 - src\main.cpp

@@ -72,7 +72,7 @@ include_directories(${ANTLR4_OUTPUT_DIR})
 # 実行ファイルを作成
 add_executable(Clear
     src/main.cpp
-    src/ir/IRGenVisitor.cpp
+    
     src/sema/SemaBuilder.cpp
     src/ir/IRGenFromSema.cpp
     src/runtime/host_runtime.cpp

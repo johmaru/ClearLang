@@ -1,4 +1,4 @@
-Files of interest snapshot (2025-09-28)
+Files of interest snapshot (2025-09-29)
 
 Key files:
 - CMakeLists.txt
@@ -397,5 +397,5 @@ Executables:
 - build-ninja\generated\ClearLanguageVisitor.h
 
 Counts:
-- src files: 14
+- src files: 11
 - grammar files: 9

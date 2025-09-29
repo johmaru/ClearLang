@@ -18,14 +18,20 @@ class sema_builder : public ClearLanguageBaseVisitor {
         std::any visitPostfixExpr(ClearLanguageParser::PostfixExprContext* ctx) override;
         std::any visitParenExpr(ClearLanguageParser::ParenExprContext* ctx) override;
         std::any visitUnitLiteral(ClearLanguageParser::UnitLiteralContext* ctx) override;
+		std::any visitOrExpr(ClearLanguageParser::OrExprContext* ctx) override;
+		std::any visitAndExpr(ClearLanguageParser::AndExprContext* ctx) override;
+		std::any visitEqualExpr(ClearLanguageParser::EqualExprContext* ctx) override;
         std::any visitAddExpr(ClearLanguageParser::AddExprContext* ctx) override;
         std::any visitMulExpr(ClearLanguageParser::MulExprContext* ctx) override;
         std::any visitVarRef(ClearLanguageParser::VarRefContext* ctx) override;
         std::any visitBlock(ClearLanguageParser::BlockContext* ctx) override;
+		std::any visitIfBlock(ClearLanguageParser::IfBlockContext* ctx) override;
+		std::any visitIfSingle(ClearLanguageParser::IfSingleContext* ctx) override;
         std::any visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext* ctx) override;
         std::any visitStmtReturn(ClearLanguageParser::StmtReturnContext* ctx) override;
-		std::any visitStringLiteral(ClearLanguageParser::StringLiteralContext* context) override;
-		std::any visitStmtExpr(ClearLanguageParser::StmtExprContext* context) override;
+		std::any visitStringLiteral(ClearLanguageParser::StringLiteralContext* ctx) override;
+		std::any visitBoolLiteral(ClearLanguageParser::BoolLiteralContext* context) override;
+		std::any visitStmtExpr(ClearLanguageParser::StmtExprContext* ctx) override;
     private:
         type_ref resolve_type(const std::string& name) const;
         static type_ref make_type_ref_from(ClearLanguageParser::TypeContext* ctx);

@@ -55,6 +55,12 @@ namespace sema {
         std::vector<std::shared_ptr<stmt>> statements;
     };
 
+    struct stmt_if : stmt {
+        std::shared_ptr<expr> cond;
+        std::shared_ptr<block> then_blk;
+        std::shared_ptr<block> else_blk;
+    };
+
     struct param { std::string name; type_ref type; };
     struct function {
         std::string name;

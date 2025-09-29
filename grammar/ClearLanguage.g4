@@ -2,7 +2,19 @@ grammar ClearLanguage;
 
 start: funcDecl+ EOF;
 
-expr: addExpr;
+expr: orExpr;
+
+orExpr
+    : left=andExpr (OR right+=andExpr)*
+    ;
+
+andExpr
+    : left=equalExpr (AND right+=equalExpr)*
+    ;
+
+equalExpr
+    : left=addExpr (op+=(EQ|NEQ) right+=addExpr)*
+    ;
 
 addExpr
     : left=mulExpr (op+=(PLUS|MINUS) right+=mulExpr)*
@@ -12,7 +24,7 @@ PLUS: '+';
 MINUS: '-';
 
 mulExpr
-    : left=unaryExpr (op+=('*'|'/') right+=unaryExpr)*
+    : left=unaryExpr (op+=('*'|'/'|'%') right+=unaryExpr)*
     ;
 
 unaryExpr
@@ -40,6 +52,7 @@ primary
     : FLOAT                      #floatLiteral
     | INT                        #intLiteral
     | STRING                     #stringLiteral
+    | (TRUE | FALSE)             #boolLiteral
     | IDENT                      #varRef
     | '(' expr ')'               #parenExpr
     | '(' ')'                    #unitLiteral
@@ -77,8 +90,14 @@ block
 
 stmt
     : RETURN expr? SEMI  #stmtReturn
-    | varDecl          #stmtVarDecl
-    | expr SEMI        #stmtExpr
+    | varDecl            #stmtVarDecl
+    | ifStmt             #stmtIf
+    | expr SEMI          #stmtExpr
+    ;
+
+ifStmt
+    : IF '(' expr ')' block #ifBlock
+    | IF '(' expr ')' stmt #ifSingle
     ;
 
 varDecl
@@ -89,12 +108,21 @@ argList
     : expr (',' expr)*
     ;
 
+IF: 'if';
 FUNC: 'func';
 ARROW: '->';
 SEMI: ';';
 COLON: ':';
+TRUE: 'true';
+FALSE: 'false';
+EQ: 'is';
+NEQ: 'not';
+AND: 'and';
+OR: 'or';
 ASSIGN: '=';
 RETURN: 'return';
+
+
 STRING: '"' (ESC_SEQ | ~["\\])* '"';
 fragment ESC_SEQ: '\\' [btnfr"'\\];
 ASForce: 'as!';
