@@ -1,6 +1,8 @@
 #include <atomic>
 #include <cstdint>
 #include <cerrno>
+#include <cstring>
+#include <cstdlib>
 #include <limits>
 #include <cstdio>
 #include <sstream>

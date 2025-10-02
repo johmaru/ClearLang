@@ -60,7 +60,6 @@ void ir_gen_from_sema::emit_entry_shim(const sema::module& m) const {
 
     auto ai = fn->arg_begin();
     llvm::Value* out = ai++;
-    const llvm::Value* cap = ai; (void)cap;
 
     auto store_tag = [&](const uint8_t tag) {
         builder_->CreateStore(llvm::ConstantInt::get(i8_ty, tag), out);
@@ -418,7 +417,7 @@ llvm::Value* ir_gen_from_sema::emit_bin_op(const sema::bin_op& b) {
         if (lhs->getType()->isIntegerTy() && lhs->getType() == rhs->getType()) {
             cmp = (b.op == "is") ? builder_->CreateICmpEQ(lhs, rhs)
 								 : builder_->CreateICmpNE(lhs, rhs);
-        } else if ((lhs->getType()->isFloatTy() && rhs->getType()->isFloatTy())) {
+        } else if ((lhs->getType()->isHalfTy() && rhs->getType()->isHalfTy()) || (lhs->getType()->isFloatTy() && rhs->getType()->isFloatTy())) {
             cmp = (b.op == "is") ? builder_->CreateFCmpOEQ(lhs, rhs)
                                  : builder_->CreateFCmpONE(lhs, rhs);
         } else throw std::runtime_error("emitBinOp: unsupported type for equal");
@@ -427,9 +426,24 @@ llvm::Value* ir_gen_from_sema::emit_bin_op(const sema::bin_op& b) {
     }
 
     if (b.op == "and" || b.op == ("or")) {
-        if (!(lhs->getType()->isIntegerTy(1) && rhs->getType()->isIntegerTy(1))) throw std::runtime_error("emitBinOp(and | or): operands must be i1");
-        return (b.op == "and") ? builder_->CreateAnd(lhs, rhs)
-    	                       : builder_->CreateOr(lhs, rhs);
+        // Coerce operands to i1
+        auto to_i1 = [&](llvm::Value* v) -> llvm::Value* {
+            if (v->getType()->isIntegerTy(1)) {
+                return v;
+            } else if (v->getType()->isIntegerTy()) {
+                return builder_->CreateICmpNE(v, llvm::ConstantInt::get(v->getType(), 0));
+            } else if (v->getType()->isHalfTy() || v->getType()->isFloatTy()) {
+                return builder_->CreateFCmpONE(v, llvm::ConstantFP::get(v->getType(), 0.0));
+            } else if (v->getType()->isPointerTy()) {
+                return builder_->CreateICmpNE(v, llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(v->getType())));
+            } else {
+                throw std::runtime_error("emitBinOp(and|or): cannot coerce operand to i1");
+            }
+        };
+        llvm::Value* lhs_i1 = to_i1(lhs);
+        llvm::Value* rhs_i1 = to_i1(rhs);
+        return (b.op == "and") ? builder_->CreateAnd(lhs_i1, rhs_i1)
+    	                       : builder_->CreateOr(lhs_i1, rhs_i1);
     }
 
     if (lhs->getType()->isIntegerTy() && lhs->getType() == rhs->getType()) {
