@@ -96,8 +96,8 @@ stmt
     ;
 
 ifStmt
-    : IF '(' expr ')' block #ifBlock
-    | IF '(' expr ')' stmt #ifSingle
+    : IF '(' expr ')' block (ELSE (block | stmt))? #ifBlock
+    | IF '(' expr ')' stmt (ELSE (block | stmt))? #ifSingle
     ;
 
 varDecl
@@ -109,6 +109,7 @@ argList
     ;
 
 IF: 'if';
+ELSE: 'else';
 FUNC: 'func';
 ARROW: '->';
 SEMI: ';';

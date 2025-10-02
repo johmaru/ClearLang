@@ -1,4 +1,4 @@
-ClearLanguage overview (auto, 2025-09-29)
+ClearLanguage overview (auto, 2025-10-02)
 
 Stack: ANTLR4 (grammar at grammar/ClearLanguage.g4), LLVM, CMake + Presets, Conan, C++17
 Entrypoint: src/main.cpp

@@ -1,4 +1,4 @@
-Project tree snapshot (2025-09-29)
+Project tree snapshot (2025-10-02)
 
 Top-level directories:
 - .cache

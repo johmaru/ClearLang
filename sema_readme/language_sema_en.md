@@ -23,6 +23,7 @@
 - as          | cast any type(Currentlly support any int -> any int but not support string -> float)
 - as!         | force cast (Currentlly support string -> any int but not support string -> float) if contains literal,return error.
 - if          | 
+- else        | 
 
 Example
 

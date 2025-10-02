@@ -408,8 +408,33 @@ std::any sema_builder::visitIfBlock(ClearLanguageParser::IfBlockContext* ctx) {
 
     auto node = std::make_shared<sema::stmt_if>();
     node->cond = cond;
-    node->then_blk = std::any_cast<std::shared_ptr<block>>(visit(ctx->block()));
+    node->then_blk = std::any_cast<std::shared_ptr<block>>(visit(ctx->block(0)));
+
     node->else_blk = nullptr;
+    const auto blks = ctx->block();
+    auto* else_stmt_ctx = ctx->stmt();
+    if (blks.size() >= 2) {
+        node->else_blk = std::any_cast<std::shared_ptr<block>>(visit(ctx->block(1)));
+    } else if (else_stmt_ctx != nullptr) {
+        const auto else_blk = std::make_shared<block>();
+        if (auto* sr = dynamic_cast<ClearLanguageParser::StmtReturnContext*>(else_stmt_ctx)) {
+            else_blk->statements.push_back(std::any_cast<std::shared_ptr<stmt_return>>(visit(sr)));
+        }
+        else if (auto* vd = dynamic_cast<ClearLanguageParser::StmtVarDeclContext*>(else_stmt_ctx)) {
+            else_blk->statements.push_back(std::any_cast<std::shared_ptr<stmt_var_decl>>(visit(vd)));
+        }
+        else if (auto* se = dynamic_cast<ClearLanguageParser::StmtExprContext*>(else_stmt_ctx)) {
+            else_blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt_expr>>(visit(se)));
+        }
+        else if (auto* si = dynamic_cast<ClearLanguageParser::StmtIfContext*>(else_stmt_ctx)) {
+            else_blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt_if>>(visit(si)));
+        }
+        else {
+            visit(else_stmt_ctx);
+        }
+        node->else_blk = else_blk;
+    }
+
     return node;
 }
 
@@ -421,15 +446,55 @@ std::any sema_builder::visitIfSingle(ClearLanguageParser::IfSingleContext* ctx) 
 
     if (!(is_bool || is_int)) throw std::runtime_error("if condition must be boolean or int expression");
 
-    const auto then_blk = std::make_shared<block>();
-
-    auto any_stmt = visit(ctx->stmt());
-    then_blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt>>(any_stmt));
-
     auto node = std::make_shared<sema::stmt_if>();
     node->cond = cond;
+
+    const auto then_blk = std::make_shared <block>();
+    auto* then_stmt_ctx = ctx->stmt(0);
+    if (auto* sr = dynamic_cast<ClearLanguageParser::StmtReturnContext*>(then_stmt_ctx)) {
+        then_blk->statements.push_back(std::any_cast<std::shared_ptr<stmt_return>>(visit(sr)));
+    }
+    else if (auto* vd = dynamic_cast<ClearLanguageParser::StmtVarDeclContext*>(then_stmt_ctx)) {
+        then_blk->statements.push_back(std::any_cast<std::shared_ptr<stmt_var_decl>>(visit(vd)));
+    }
+    else if (auto* se = dynamic_cast<ClearLanguageParser::StmtExprContext*>(then_stmt_ctx)) {
+        then_blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt_expr>>(visit(se)));
+    }
+    else if (auto* si = dynamic_cast<ClearLanguageParser::StmtIfContext*>(then_stmt_ctx)) {
+        then_blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt_if>>(visit(si)));
+    }
+    else {
+        visit(then_stmt_ctx);
+    }
     node->then_blk = then_blk;
+
     node->else_blk = nullptr;
+    const auto& blks = ctx->getRuleContexts<ClearLanguageParser::BlockContext>();
+    const auto& stmts_vec = ctx->stmt();
+    if (!blks.empty()) {
+        node->else_blk = std::any_cast<std::shared_ptr<block>>(visit(blks[0]));
+    }
+    else if (stmts_vec.size() >= 2) {
+    	const auto else_blk = std::make_shared<block>();
+        auto* else_stmt_ctx = stmts_vec[1];
+        if (auto* sr = dynamic_cast<ClearLanguageParser::StmtReturnContext*>(else_stmt_ctx)) {
+            else_blk->statements.push_back(std::any_cast<std::shared_ptr<stmt_return>>(visit(sr)));
+        }
+        else if (auto* vd = dynamic_cast<ClearLanguageParser::StmtVarDeclContext*>(else_stmt_ctx)) {
+            else_blk->statements.push_back(std::any_cast<std::shared_ptr<stmt_var_decl>>(visit(vd)));
+        }
+        else if (auto* se = dynamic_cast<ClearLanguageParser::StmtExprContext*>(else_stmt_ctx)) {
+            else_blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt_expr>>(visit(se)));
+        }
+        else if (auto* si = dynamic_cast<ClearLanguageParser::StmtIfContext*>(else_stmt_ctx)) {
+            else_blk->statements.push_back(std::any_cast<std::shared_ptr<sema::stmt_if>>(visit(si)));
+        }
+        else {
+            visit(else_stmt_ctx);
+        }
+        node->else_blk = else_blk;
+    }
+	
     return node;
 }
 

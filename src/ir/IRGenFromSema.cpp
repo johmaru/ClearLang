@@ -4,6 +4,7 @@
 #include <llvm/ADT/APFloat.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/GlobalVariable.h>
+#include <llvm/IR/CFG.h>
 
 ir_gen_from_sema::ir_gen_from_sema(llvm::LLVMContext& ctx, const std::string& module_name)
   : ctx_(ctx),
@@ -172,10 +173,17 @@ llvm::Function* ir_gen_from_sema::emit_function(const sema::function& f) {
     }
     emit_block(*f.body);
 
-    // if the last block does not have terminator, return void or error
-    if (!entry->getTerminator()) {
-        if (ret_ty->isVoidTy()) builder_->CreateRetVoid();
-        else throw std::runtime_error("missing return");
+    // Verification currently InsertBlock.
+    llvm::BasicBlock* cur = builder_->GetInsertBlock();
+    if (!cur->getTerminator()) {
+        if (llvm::pred_empty(cur)) {
+            // if unreachable
+            builder_->CreateUnreachable();
+        } else if (ret_ty->isVoidTy()) {
+            builder_->CreateRetVoid();
+        } else {
+            throw std::runtime_error("missing return");
+        }
     }
     vars_.pop_back();
     return fn;
