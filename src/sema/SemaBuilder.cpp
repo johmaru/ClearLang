@@ -9,12 +9,6 @@
 #include <string>
 #include <llvm/ADT/APFloat.h>
 
-#include "../core/CLType.h"
-#include "../core/CLType.h"
-#include "../core/CLType.h"
-#include "../core/CLType.h"
-#include "../core/CLType.h"
-
 using sema::expr; using sema::literal; using sema::var_ref;
 using sema::unary; using sema::bin_op; using sema::block;
 using sema::stmt_var_decl; using sema::stmt_return; using sema::function;
@@ -561,7 +555,7 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
         case type::kind_enum::i32: case type::kind_enum::u32:
         case type::kind_enum::i64: case type::kind_enum::u64:
             return true;
-        case type::kind_enum::string: case type::kind_enum::f16: case::type::kind_enum::f32: case type::kind_enum::noreturn: case type::kind_enum::unit:
+        case type::kind_enum::string: case type::kind_enum::f16: case type::kind_enum::f32: case type::kind_enum::noreturn: case type::kind_enum::unit:
             return false;
         }
         return false;

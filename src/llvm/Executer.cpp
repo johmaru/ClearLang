@@ -46,7 +46,7 @@ int support_execute_debug(ir_gen_from_sema& ir, std::unique_ptr<llvm::LLVMContex
 
     // llvm version gap
 #if defined(__APPLE__)
-    char GlobalPrefix = '_';
+    constexpr char global_prefix = '_';
 #else
     constexpr char global_prefix = '\0';
 #endif

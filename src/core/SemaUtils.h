@@ -8,7 +8,7 @@ namespace sema_utils {
 inline void normalize_value_storage(value& val) {
     const auto& t = val.type;
     auto unsigned_kind = [](const type& bt){
-        return bt.kind == type::kind_enum::u8 || bt.kind == type::kind_enum::u32 || bt.kind == type::kind_enum::u64;
+        return bt.kind == type::kind_enum::u8 || bt.kind == type::kind_enum::u16 || bt.kind == type::kind_enum::u32 || bt.kind == type::kind_enum::u64;
     };
     if (t.is_builtin() && unsigned_kind(t.builtin)) {
         if (std::holds_alternative<int64_t>(val.v))
