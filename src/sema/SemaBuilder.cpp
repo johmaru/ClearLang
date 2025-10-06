@@ -9,6 +9,8 @@
 #include <string>
 #include <llvm/ADT/APFloat.h>
 
+#include "../core/CLType.h"
+
 using sema::expr; using sema::literal; using sema::var_ref;
 using sema::unary; using sema::bin_op; using sema::block;
 using sema::stmt_var_decl; using sema::stmt_return; using sema::function;
@@ -123,25 +125,49 @@ sema_builder::sema_builder() : mod_(std::make_shared<sema::module>()) {
     }
 
     {
-        auto addParse = [&](const char* name, type::kind_enum k) {
+        auto add_parse = [&](const char* name, type::kind_enum k) {
 
             const auto sig = std::make_shared<function_sig>();
             sig->param_types.push_back(type_ref::builtin_type(type{ type::kind_enum::string }));
 			sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ k }));
 			func_sigs_[name] = sig;
         };
-		addParse("__cl_parse_i8", type::kind_enum::i8);
-		addParse("__cl_parse_u8", type::kind_enum::u8);
-		addParse("__cl_parse_i16", type::kind_enum::i16);
-		addParse("__cl_parse_u16", type::kind_enum::u16);
-		addParse("__cl_parse_i32", type::kind_enum::i32);
-		addParse("__cl_parse_u32", type::kind_enum::u32);
-		addParse("__cl_parse_i64", type::kind_enum::i64);
-		addParse("__cl_parse_u64", type::kind_enum::u64);
+		add_parse("__cl_parse_i8", type::kind_enum::i8);
+		add_parse("__cl_parse_u8", type::kind_enum::u8);
+		add_parse("__cl_parse_i16", type::kind_enum::i16);
+		add_parse("__cl_parse_u16", type::kind_enum::u16);
+		add_parse("__cl_parse_i32", type::kind_enum::i32);
+		add_parse("__cl_parse_u32", type::kind_enum::u32);
+		add_parse("__cl_parse_i64", type::kind_enum::i64);
+		add_parse("__cl_parse_u64", type::kind_enum::u64);
+    }
+
+    {
+        const auto sig = std::make_shared<function_sig>();
+        sig->param_types.push_back(type_ref::builtin_type(type{ type::kind_enum::string }));
+        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
+        func_sigs_["__set_entry"] = sig;
+        func_sigs_["__add_source"] = sig;
+        func_sigs_["__set_output"] = sig;
     }
 }
 
 std::shared_ptr<sema::module> sema_builder::take_module() { return std::move(mod_); }
+
+std::string sema_builder::resolve_function_name(const std::string& name) const {
+
+    if (func_sigs_.count(name)) return name;
+
+    auto q = qualify(name);
+    if (func_sigs_.count(q)) return q;
+
+    for (auto& it : imports_) {
+        std::string cand = it.second + "::" + name;
+        if (func_sigs_.count(cand)) return cand;
+    }
+    throw std::runtime_error("undefined function : " + name);
+}
+
 
 type_ref sema_builder::resolve_type(const std::string& name) const {
     for (auto it = type_scopes_.rbegin(); it != type_scopes_.rend(); ++it) {
@@ -171,8 +197,20 @@ type_ref sema_builder::make_type_ref_from(ClearLanguageParser::TypeContext* ctx)
 
 std::any sema_builder::visitStart(ClearLanguageParser::StartContext* ctx) {
 
+    if (auto* pkg = ctx->packageDecl()) {
+        current_package_ = pkg->qualifiedIdent()->getText();
+    }
+
+    for (auto* imp : ctx->importDecl()) {
+    	const std::string full_path = imp->qualifiedIdent()->getText();
+        std::string alias = imp->AS() ? imp->IDENT()->getText() : full_path;
+        imports_[alias] = full_path;
+    }
+
     for (auto* fd : ctx->funcDecl()) {
         auto name = fd->name->getText();
+        std::string qualified_name = qualify(name);
+
         const auto sig = std::make_shared<function_sig>();
         if (const auto pl = fd->paramList()) {
             for (auto* p : pl->param()) {
@@ -180,13 +218,13 @@ std::any sema_builder::visitStart(ClearLanguageParser::StartContext* ctx) {
             }
         }
         sig->return_type = std::make_shared<type_ref>(make_type_ref_from(fd->type()));
-        func_sigs_[name] = sig;
+        func_sigs_[qualified_name] = sig;
 
         // pick up entry point name if any
         for (auto* at : fd->attributes()) {
             for (auto* id : at->IDENT()) {
                 if (id->getText() == "EntryPoint") {
-                    mod_->entry_name = name;
+                    mod_->entry_name = qualified_name;
                 }
             }
         }
@@ -194,7 +232,7 @@ std::any sema_builder::visitStart(ClearLanguageParser::StartContext* ctx) {
 
     for (auto* fd : ctx->funcDecl()) {
         auto fun = std::make_shared<function>();
-        fun->name = fd->name->getText();
+        fun->name = qualify(fd->name->getText());
         if (const auto pl = fd->paramList()) {
             for (auto* p : pl->param()) {
                 sema::param prm;
@@ -361,15 +399,27 @@ std::any sema_builder::visitMulExpr(ClearLanguageParser::MulExprContext* ctx) {
 std::any sema_builder::visitVarRef(ClearLanguageParser::VarRefContext* ctx) {
     const auto node = std::make_shared<var_ref>();
     node->name = ctx->IDENT()->getText();
+
     for (auto it = var_types_.rbegin(); it != var_types_.rend(); ++it) {
         auto f = it->find(node->name);
-        if (f != it->end()) { node->type = f->second; return std::static_pointer_cast<expr>(node); }
+        if (f != it->end()) {
+	        node->type = f->second;
+        	return std::static_pointer_cast<expr>(node);
+        }
     }
 
-    if (const auto fit = func_sigs_.find(node->name); fit != func_sigs_.end()) {
-        node->type = type_ref::function_type(fit->second);
-        return std::static_pointer_cast<expr>(node);
-    }
+   try {
+       std::string resolved = resolve_function_name(node->name);
+       const auto fit = func_sigs_.find(resolved);
+
+   	   if (fit != func_sigs_.end()) {
+           node->name = resolved;
+           node->type = type_ref::function_type(fit->second);
+           return std::static_pointer_cast<expr>(node);
+   	   }
+   } catch (...) {
+	   
+   }
     throw std::runtime_error("undefined variable: " + node->name);
 }
 
@@ -579,14 +629,14 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
 
     for (auto* child : ctx->children) {
 	    if (auto* cs = dynamic_cast<ClearLanguageParser::CallSuffixContext*>(child)) {
-			auto vr = std::dynamic_pointer_cast<var_ref>(cur);
+	    	const auto vr = std::dynamic_pointer_cast<var_ref>(cur);
 			if (!vr) throw std::runtime_error("can only call functions by name");
 
-			auto call = std::make_shared<sema::call>();
-			call->callee = vr->name;
+			const auto call = std::make_shared<sema::call>();
+            call->callee = resolve_function_name(vr->name);
 
             call->args.clear();
-            if (auto al = cs->argList()) {
+            if (const auto al = cs->argList()) {
 	            for (auto* ectx : al->expr()) {
                     call->args.push_back(std::any_cast<std::shared_ptr<expr>>(visit(ectx)));
 				}
@@ -594,7 +644,7 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
 
 			auto it = func_sigs_.find(call->callee);
 			if (it == func_sigs_.end()) throw std::runtime_error("call to undefined function: " + call->callee);
-			auto sig = it->second;
+            const auto& sig = it->second;
 			if (sig->param_types.size() != call->args.size()) throw std::runtime_error("argument count mismatch in function call: " + call->callee);
             for (size_t i = 0; i < call->args.size(); ++i) {
                 if (!(call->args[i]->type.is_builtin() && sig->param_types[i].is_builtin() &&
@@ -611,9 +661,9 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
         if (auto* as = dynamic_cast<ClearLanguageParser::AsSuffixContext*>(child)) {
 			type_ref target = make_type_ref_from(as->type());
 
-            if (auto lit = std::dynamic_pointer_cast<literal>(cur)) {
+            if (const auto lit = std::dynamic_pointer_cast<literal>(cur)) {
                 if (lit->value.is_untyped_int) {
-                    auto coerced = sema_utils::coerce_untyped_int_to(lit->value, target);
+                	const auto coerced = sema_utils::coerce_untyped_int_to(lit->value, target);
                     lit->value = coerced;
                     lit->type = target;
                     cur->type = target;
@@ -645,7 +695,7 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
                     builtin_type_name(cur->type.builtin) + " -> " + builtin_type_name(target.builtin));
             }
 
-			auto cast = std::make_shared<sema::cast>();
+			const auto cast = std::make_shared<sema::cast>();
 			cast->inner = cur;
 			cast->target_type = target;
 			cast->type = target;
@@ -655,9 +705,9 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
 
         if (auto* asf = dynamic_cast<ClearLanguageParser::AsForceSuffixContext*>(child)) {
 	        type_ref target = make_type_ref_from(asf->type());
-            if (auto lit = std::dynamic_pointer_cast<literal>(cur)) {
+            if (const auto lit = std::dynamic_pointer_cast<literal>(cur)) {
                 if (lit->value.is_untyped_int) {
-                    auto coerced = sema_utils::coerce_untyped_int_to(lit->value, target);
+                	const auto coerced = sema_utils::coerce_untyped_int_to(lit->value, target);
                     lit->value = coerced;
                     lit->type = target;
                     cur->type = target;
@@ -672,7 +722,7 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
             if (src_k == dst_k) { cur->type = target; continue; }
 
             if (src_k == type::kind_enum::string && is_int_kind(dst_k)) {
-	            if (auto lit = std::dynamic_pointer_cast<literal>(cur)) {
+	            if (const auto lit = std::dynamic_pointer_cast<literal>(cur)) {
 		            if (std::holds_alternative<std::string>(lit->value.v)) {
                         const std::string& s = std::get<std::string>(lit->value.v);
                         auto is_digits = [](const std::string& t) {
@@ -707,7 +757,7 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
                 if (!callee) {
                     throw std::runtime_error("string to this target type via 'as! is not supported");
                 }
-                auto call = std::make_shared<sema::call>();
+                const auto call = std::make_shared<sema::call>();
                 call->callee = callee;
                 call->args.clear();
                 call->args.push_back(cur);
@@ -731,7 +781,7 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
                     builtin_type_name(cur->type.builtin) + " -> " + builtin_type_name(target.builtin));
             }
 
-            auto cast = std::make_shared<sema::cast>();
+            const auto cast = std::make_shared<sema::cast>();
             cast->inner = cur;
             cast->target_type = target;
             cast->type = target;

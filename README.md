@@ -1,3 +1,9 @@
+## ClearLanguage - Getting Start
+
+1. Create some empty directory
+2. ```Clear init```
+3. ```Clear build```
+
 ## ClearLanguage - Build Guide (Windows, PowerShell)
 
 This project uses Conan (deps), CMake (build), ANTLR (parser gen), and LLVM.

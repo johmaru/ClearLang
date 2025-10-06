@@ -78,7 +78,7 @@ add_executable(Clear
     src/runtime/host_runtime.cpp
     src/llvm/Executer.cpp
     ${ANTLR4_GENERATED_SOURCES}
- )
+  "src/commands/BuildCommand.h" "src/commands/BuildCommand.cpp" "src/core/BuildDSL.h")
 
 # 実行ファイルがコード生成完了を待つように依存関係を設定
 add_dependencies(Clear generate_parser)

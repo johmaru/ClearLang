@@ -30,10 +30,20 @@ class sema_builder : public ClearLanguageBaseVisitor {
         std::any visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext* ctx) override;
         std::any visitStmtReturn(ClearLanguageParser::StmtReturnContext* ctx) override;
 		std::any visitStringLiteral(ClearLanguageParser::StringLiteralContext* ctx) override;
-		std::any visitBoolLiteral(ClearLanguageParser::BoolLiteralContext* context) override;
+		std::any visitBoolLiteral(ClearLanguageParser::BoolLiteralContext* ctx) override;
 		std::any visitStmtExpr(ClearLanguageParser::StmtExprContext* ctx) override;
     private:
-        type_ref resolve_type(const std::string& name) const;
+        std::string current_package_;
+
+        [[nodiscard]] std::string qualify(const std::string& name) const {
+            return current_package_.empty() ? name : current_package_ + "::" + name;
+		}
+
+        std::unordered_map<std::string, std::string> imports_;
+
+        [[nodiscard]] std::string resolve_function_name(const std::string& name) const;
+
+        [[nodiscard]] type_ref resolve_type(const std::string& name) const;
         static type_ref make_type_ref_from(ClearLanguageParser::TypeContext* ctx);
 
         std::shared_ptr<sema::module> mod_;

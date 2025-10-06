@@ -1,6 +1,18 @@
 grammar ClearLanguage;
 
-start: funcDecl+ EOF;
+start: packageDecl? importDecl* (funcDecl)* EOF;
+
+packageDecl
+    : PACKAGE qualifiedIdent SEMI
+    ;
+
+importDecl
+    : IMPORT qualifiedIdent (AS IDENT)? SEMI
+    ;
+
+qualifiedIdent
+    : IDENT ('::' IDENT)*
+    ;
 
 expr: orExpr;
 
@@ -108,6 +120,8 @@ argList
     : expr (',' expr)*
     ;
 
+PACKAGE: 'package';
+IMPORT: 'import';
 IF: 'if';
 ELSE: 'else';
 FUNC: 'func';

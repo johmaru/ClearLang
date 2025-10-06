@@ -14,6 +14,7 @@
 #include "core/CLType.h"
 #include <antlr4-runtime.h>
 #include "llvm/Executer.h"
+#include "commands/BuildCommand.h"
 
 // ir debugging, if return os error code
 #include <atomic>
@@ -35,40 +36,78 @@ extern "C" void cl_force_win32_error(const DWORD code){
 #endif
 
 int main(int argc, const char* argv[]) {
-     try {
-        std::string code;
+    try {
+        if (argc < 2) {
+            std::cerr << "usage: clr <command> [--debug]\n";
+            return 1;
+        }
+        const std::string cmd = argv[1];
+        bool debug = false;
+        for (int i = 2; i < argc; ++i) {
+            if (std::string(argv[i]) == "--debug") debug = true;
+        }
 
-        std::filesystem::path base = std::filesystem::path(argv[0]).parent_path();
-        std::filesystem::path src_path = base / "main.clr";
+        if (cmd == "build") {
+        	const build_command bc("build.clr");
+            bc.execute_build(debug);
+        } else if (cmd == "init") {
+            
+            try {
+                std::ofstream build_file("build.clr");
+                std::string default_build_text = R"(package build; 
+				func configure() -> unit {
+				  __set_entry("main::main"); 
+				  __add_source("src");
+				  __set_output("build / bin");
+				})";
 
-        auto read_file = [](const std::filesystem::path& p) {
-            std::ifstream ifs(p, std::ios::binary);
-            return std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-        };
+                build_file << default_build_text << '\n';
 
-        if (std::filesystem::exists(src_path)) {
-            code = read_file(src_path);
-        } else if (argc >= 3) {
-	        if (std::filesystem::path arg_path = argv[2]; std::filesystem::exists(arg_path)) {
-                code = read_file(arg_path);
-            } else {
-                code = argv[2];
+                std::filesystem::path init_path = std::filesystem::current_path();
+
+                std::filesystem::create_directory("src");
+
+                std::filesystem::current_path(init_path / "src");
+
+                std::ofstream src_file("main.clr");
+                std::string default_main_text = R"(package main;
+				[EntryPoint]
+				func main() -> () {
+				    a: u8 = 50;
+				    b: string = "30";
+					c: bool = true;
+					d: f32 = 3.5;
+				    e: u8 = if_test(a, b as! u8, c);
+					
+					__cl_u8_printfn(e);
+					__cl_f32_printfn(d);
+				}
+
+				func if_test(a:u8, b:u8, c:bool) -> u8 {
+				    if (c) {
+						return a + b;
+					} else {
+						return a - b;
+					}
+
+				})";
+
+                src_file << default_main_text << '\n';
+                std::cout << "Initialize Completed" << '\n';
+
+            } catch (const std::filesystem::filesystem_error& e) {
+                std::cerr << "Initialize Error : " << e.what() << '\n';
+                return 1;
             }
-        } else {
-            return -1;
+            
         }
-
-        antlr4::ANTLRInputStream input(code);
-        ClearLanguageLexer lexer(&input);
-        antlr4::CommonTokenStream tokens(&lexer);
-        ClearLanguageParser parser(&tokens);
-
-        if (execute(argc, argv, parser) != 0) {
-			throw std::runtime_error("Execution failed");
+        else {
+            std::cerr << "unsupported command: " << cmd << "\n";
+            return 1;
         }
-        
         return 0;
-    } catch (const std::exception& ex) {
+    }
+    catch (const std::exception& ex) {
         std::cerr << "error: " << ex.what() << '\n';
         return 1;
     }

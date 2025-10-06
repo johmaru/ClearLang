@@ -1,4 +1,4 @@
-Project tree snapshot (2025-10-02)
+Project tree snapshot (2025-10-06)
 
 Top-level directories:
 - .cache
@@ -29,6 +29,9 @@ Top-level files:
 - README.md
 
 Key source files (src):
+- src\commands\BuildCommand.cpp
+- src\commands\BuildCommand.h
+- src\core\BuildDSL.h
 - src\core\CLType.h
 - src\core\SemaUtils.h
 - src\ir\IRGenFromSema.cpp

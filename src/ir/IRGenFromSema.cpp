@@ -288,11 +288,11 @@ llvm::Value* ir_gen_from_sema::emit_expr(const sema::expr& e) {
             auto* float_ty = llvm::Type::getFloatTy(ctx_);
             auto* fn_ty = llvm::FunctionType::get(void_ty, { float_ty }, false);
 
-            const std::string fnName = c->callee;
-            llvm::Function* callee = mod_->getFunction(fnName);
+            const std::string fn_name = c->callee;
+            llvm::Function* callee = mod_->getFunction(fn_name);
             if (callee) {
 	            if (callee->getFunctionType() != fn_ty) {
-		            if (!callee->use_empty()) callee->setName(fnName + "_OLD");
+		            if (!callee->use_empty()) callee->setName(fn_name + "_OLD");
 		            else callee->eraseFromParent();
 		            
                     callee = nullptr;
@@ -300,17 +300,17 @@ llvm::Value* ir_gen_from_sema::emit_expr(const sema::expr& e) {
             }
 
             if (!callee) {
-                auto fc = mod_->getOrInsertFunction(fnName, fn_ty);
+                auto fc = mod_->getOrInsertFunction(fn_name, fn_ty);
                 callee = llvm::cast<llvm::Function>(fc.getCallee());
                 callee->setCallingConv(llvm::CallingConv::C);
             }
 
-            if (c->args.size() != 1) throw std::runtime_error(fnName +" expected 1 args");
+            if (c->args.size() != 1) throw std::runtime_error(fn_name +" expected 1 args");
             llvm::Value* arg0 = emit_expr(*c->args[0]);
             if (arg0->getType()->isHalfTy()) {
 	            arg0 = builder_->CreateFPExt(arg0, float_ty, "h2f");
             } else if (arg0->getType()->isFloatTy()) {}
-              else throw std::runtime_error(fnName +": doesn't support other then float type");
+              else throw std::runtime_error(fn_name +": doesn't support other then float type");
 
             return builder_->CreateCall(callee, { arg0 });
         }
@@ -320,8 +320,8 @@ llvm::Value* ir_gen_from_sema::emit_expr(const sema::expr& e) {
 		    std::vector<llvm::Type*> param_tys;
 		    param_tys.reserve(c->args.size());
 		    for (auto& a : c->args) param_tys.push_back(to_llvm_type(a->type));
-		    auto* retTy = to_llvm_type(c->type);
-		    auto* fn_ty = llvm::FunctionType::get(retTy, param_tys, false);
+		    auto* ret_ty = to_llvm_type(c->type);
+		    auto* fn_ty = llvm::FunctionType::get(ret_ty, param_tys, false);
 		    auto fi = mod_->getOrInsertFunction(c->callee, fn_ty);
 		    callee = llvm::cast<llvm::Function>(fi.getCallee());
 	    }
@@ -340,7 +340,7 @@ llvm::Value* ir_gen_from_sema::emit_expr(const sema::expr& e) {
 
         if (src.builtin.kind == dst.builtin.kind) return v;
 
-        auto* dstTy = to_llvm_type(dst);
+        auto* dst_ty = to_llvm_type(dst);
 
         auto is_int_kind = [](const type::kind_enum k) {
             switch (k) {
@@ -356,37 +356,37 @@ llvm::Value* ir_gen_from_sema::emit_expr(const sema::expr& e) {
         };
 
         if (is_int_kind(src.builtin.kind) && dst.builtin.kind == type::kind_enum::f16) {
-            if (!v->getType()->isIntegerTy() || !dstTy->isHalfTy())
+            if (!v->getType()->isIntegerTy() || !dst_ty->isHalfTy())
                 throw std::runtime_error("emitCast(int<->f16): type mismatch");
 
             return src.builtin.is_unsigned()
-                ? builder_->CreateUIToFP(v, dstTy)
-                : builder_->CreateSIToFP(v, dstTy);
+                ? builder_->CreateUIToFP(v, dst_ty)
+                : builder_->CreateSIToFP(v, dst_ty);
         }
 
         if (src.builtin.kind == type::kind_enum::f16 && is_int_kind(dst.builtin.kind)) {
-            if (!v->getType()->isHalfTy() || !dstTy->isIntegerTy())
+            if (!v->getType()->isHalfTy() || !dst_ty->isIntegerTy())
                 throw std::runtime_error("emitCast(f16->int): type mismatch");
             return dst.builtin.is_unsigned()
-                ? builder_->CreateFPToUI(v, dstTy)
-                : builder_->CreateFPToSI(v, dstTy);
+                ? builder_->CreateFPToUI(v, dst_ty)
+                : builder_->CreateFPToSI(v, dst_ty);
         }
 
         if (is_int_kind(src.builtin.kind) && dst.builtin.kind == type::kind_enum::f32) {
-            if (!v->getType()->isIntegerTy() || !dstTy->isFloatTy())
+            if (!v->getType()->isIntegerTy() || !dst_ty->isFloatTy())
                 throw std::runtime_error("emitCast (int<->f16): type mismatch");
 
             return src.builtin.is_unsigned()
-                ? builder_->CreateUIToFP(v, dstTy)
-				: builder_->CreateSIToFP(v, dstTy);
+                ? builder_->CreateUIToFP(v, dst_ty)
+				: builder_->CreateSIToFP(v, dst_ty);
         }
 
         if (src.builtin.kind == type::kind_enum::f32 && is_int_kind(dst.builtin.kind)) {
-            if (!v->getType()->isFloatTy() || !dstTy->isIntegerTy())
+            if (!v->getType()->isFloatTy() || !dst_ty->isIntegerTy())
                 throw std::runtime_error("emitCast(f32->int): type mismatch");
             return dst.builtin.is_unsigned()
-                ? builder_->CreateFPToUI(v, dstTy)
-                : builder_->CreateFPToSI(v, dstTy);
+                ? builder_->CreateFPToUI(v, dst_ty)
+                : builder_->CreateFPToSI(v, dst_ty);
         }
 
         throw std::runtime_error("emitCast: unsupported cast");

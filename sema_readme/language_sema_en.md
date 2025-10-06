@@ -156,3 +156,9 @@ __cl_parse_u32
 __cl_parse_i64
 
 __cl_parse_u64
+
+## For build,Export Function
+
+__set_entry
+__add_source
+__set_output
