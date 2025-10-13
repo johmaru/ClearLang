@@ -1,6 +1,6 @@
 grammar ClearLanguage;
 
-start: packageDecl? importDecl* (funcDecl)* EOF;
+start: packageDecl? importDecl* (constantDecl | funcDecl)* EOF;
 
 packageDecl
     : PACKAGE qualifiedIdent SEMI
@@ -32,9 +32,6 @@ addExpr
     : left=mulExpr (op+=(PLUS|MINUS) right+=mulExpr)*
     ;
 
-PLUS: '+';
-MINUS: '-';
-
 mulExpr
     : left=unaryExpr (op+=('*'|'/'|'%') right+=unaryExpr)*
     ;
@@ -65,7 +62,7 @@ primary
     | INT                        #intLiteral
     | STRING                     #stringLiteral
     | (TRUE | FALSE)             #boolLiteral
-    | IDENT                      #varRef
+    | qualifiedIdent             #varRef
     | '(' expr ')'               #parenExpr
     | '(' ')'                    #unitLiteral
     ;
@@ -116,12 +113,43 @@ varDecl
     : IDENT COLON type (ASSIGN expr)? SEMI
     ;
 
+constantDecl
+    : CONSTANT IDENT COLON type (ASSIGN constExpr)? SEMI
+    ;
+
+constExpr
+    : constAddExpr
+    ;
+
+constAddExpr
+    : constMulExpr ( (PLUS|MINUS) constMulExpr )*
+    ;
+
+constMulExpr
+    : constUnary (('*'|'/'|'%') constUnary )*
+    ;
+
+constUnary
+    : '-' constUnary
+    | constPrimary
+    ;
+
+constPrimary
+    : INT
+    | FLOAT
+    | STRING
+    | TRUE
+    | FALSE
+    | '(' constExpr ')'
+    ;
+
 argList
     : expr (',' expr)*
     ;
 
 PACKAGE: 'package';
 IMPORT: 'import';
+CONSTANT: 'const';
 IF: 'if';
 ELSE: 'else';
 FUNC: 'func';
@@ -136,6 +164,9 @@ AND: 'and';
 OR: 'or';
 ASSIGN: '=';
 RETURN: 'return';
+PLUS: '+';
+MINUS: '-';
+
 
 
 STRING: '"' (ESC_SEQ | ~["\\])* '"';

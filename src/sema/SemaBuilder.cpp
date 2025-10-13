@@ -54,75 +54,37 @@ namespace {
 }
 
 sema_builder::sema_builder() : mod_(std::make_shared<sema::module>()) {
-    type_scopes_.emplace_back();
-    type_scopes_.back().emplace("i8", type_ref::builtin_type(type{type::kind_enum::i8}));
-    type_scopes_.back().emplace("u8", type_ref::builtin_type(type{type::kind_enum::u8}));
-    type_scopes_.back().emplace("i16", type_ref::builtin_type(type{ type::kind_enum::i16 }));
-	type_scopes_.back().emplace("u16", type_ref::builtin_type(type{ type::kind_enum::u16 }));
-    type_scopes_.back().emplace("i32", type_ref::builtin_type(type{type::kind_enum::i32}));
-    type_scopes_.back().emplace("int", type_ref::builtin_type(type{type::kind_enum::i32}));
-    type_scopes_.back().emplace("u32", type_ref::builtin_type(type{type::kind_enum::u32}));
-    type_scopes_.back().emplace("i64", type_ref::builtin_type(type{type::kind_enum::i64}));
-    type_scopes_.back().emplace("u64", type_ref::builtin_type(type{type::kind_enum::u64}));
-    type_scopes_.back().emplace("f16", type_ref::builtin_type(type{type::kind_enum::f16}));
-    type_scopes_.back().emplace("f32", type_ref::builtin_type(type{ type::kind_enum::f32 }));
-    type_scopes_.back().emplace("noreturn", type_ref::builtin_type(type{type::kind_enum::noreturn}));
-    type_scopes_.back().emplace("unit", type_ref::builtin_type(type{type::kind_enum::unit}));
-	type_scopes_.back().emplace("()", type_ref::builtin_type(type{ type::kind_enum::unit }));
-	type_scopes_.back().emplace("string", type_ref::builtin_type(type{ type::kind_enum::string }));
-    type_scopes_.back().emplace("bool", type_ref::builtin_type(type{ type::kind_enum::boolean }));
-    var_types_.emplace_back();
+	push_scope(scope_kind::global);
+    register_builtin_types();
+
+    auto add_builtin_function = [&](const char* name, std::initializer_list<type::kind_enum> params, type::kind_enum ret) {
+        auto sig = std::make_shared<function_sig>();
+        for (auto k : params) sig->param_types.push_back(type_ref::builtin_type(type{ k }));
+        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ ret }));
+
+        symbol_entry e;
+        e.kind = symbol_kind::function;
+        e.function_sig = sig;
+        e.type = type_ref::function_type(sig);
+        insert_symbol(name, e);
+        };
 
 
 	// Signatures of built-in functions
-    {
-		const auto sig = std::make_shared<function_sig>();
-		sig->param_types.push_back(type_ref::builtin_type(type{ type::kind_enum::string }));
-		sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
-		func_sigs_["__cl_printf"] = sig;
-    }
 
-    {
-        const auto sig = std::make_shared<function_sig>();
-        sig->param_types.push_back(type_ref::builtin_type(type{ type::kind_enum::i8 }));
-        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
-        func_sigs_["__cl_i8_printf"] = sig;
-    }
+    add_builtin_function("_cl_printf", { type::kind_enum::string }, type::kind_enum::unit);
 
-    {
-        const auto sig = std::make_shared<function_sig>();
-        sig->param_types.push_back(type_ref::builtin_type(type{ type::kind_enum::i8 }));
-        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
-        func_sigs_["__cl_i8_printfn"] = sig;
-    }
+    add_builtin_function("__cl_i8_printf", { type::kind_enum::i8 }, type::kind_enum::unit);
 
-    {
-        const auto sig = std::make_shared<function_sig>();
-        sig->param_types.push_back(type_ref::builtin_type(type{ type::kind_enum::u8 }));
-        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
-        func_sigs_["__cl_u8_printfn"] = sig;
-    }
+    add_builtin_function("__cl_i8_printfn", { type::kind_enum::i8 }, type::kind_enum::unit);
 
-    {
-        const auto sig = std::make_shared<function_sig>();
-        sig->param_types.push_back(type_ref::builtin_type((type{ type::kind_enum::i16 })));
-        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
-        func_sigs_["__cl_i16_printfn"] = sig;
-    }
+    add_builtin_function("__cl_u8_printfn", { type::kind_enum::u8 }, type::kind_enum::unit);
 
-    {
-        const auto sig = std::make_shared<function_sig>();
-        sig->param_types.push_back(type_ref::builtin_type((type{ type::kind_enum::f16 })));
-        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
-        func_sigs_["__cl_f16_printfn"] = sig;
-    }
+    add_builtin_function("__cl_i16_printfn", { type::kind_enum::i16 }, type::kind_enum::unit);
 
-    {
-        const auto sig = std::make_shared<function_sig>();
-        sig->param_types.push_back(type_ref::builtin_type((type{ type::kind_enum::f32 })));
-        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
-        func_sigs_["__cl_f32_printfn"] = sig;
-    }
+    add_builtin_function("__cl_f16_printfn", { type::kind_enum::f16 }, type::kind_enum::unit);
+
+    add_builtin_function("__cl_f32_printfn", { type::kind_enum::f32 }, type::kind_enum::unit);
 
     {
         auto add_parse = [&](const char* name, type::kind_enum k) {
@@ -130,7 +92,11 @@ sema_builder::sema_builder() : mod_(std::make_shared<sema::module>()) {
             const auto sig = std::make_shared<function_sig>();
             sig->param_types.push_back(type_ref::builtin_type(type{ type::kind_enum::string }));
 			sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ k }));
-			func_sigs_[name] = sig;
+            symbol_entry e;
+            e.kind = symbol_kind::function;
+            e.function_sig = sig;
+            e.type = type_ref::function_type(sig);
+            insert_symbol(name, e);
         };
 		add_parse("__cl_parse_i8", type::kind_enum::i8);
 		add_parse("__cl_parse_u8", type::kind_enum::u8);
@@ -142,44 +108,223 @@ sema_builder::sema_builder() : mod_(std::make_shared<sema::module>()) {
 		add_parse("__cl_parse_u64", type::kind_enum::u64);
     }
 
-    {
-        const auto sig = std::make_shared<function_sig>();
-        sig->param_types.push_back(type_ref::builtin_type(type{ type::kind_enum::string }));
-        sig->return_type = std::make_shared<type_ref>(type_ref::builtin_type(type{ type::kind_enum::unit }));
-        func_sigs_["__set_entry"] = sig;
-        func_sigs_["__add_source"] = sig;
-        func_sigs_["__set_output"] = sig;
+    add_builtin_function("__set_entry", { type::kind_enum::string }, type::kind_enum::unit);
+    add_builtin_function("__add_source", { type::kind_enum::string }, type::kind_enum::unit);
+    add_builtin_function("__set_output", { type::kind_enum::string }, type::kind_enum::unit);
+}
+
+bool sema_builder::try_fold_expr(const std::shared_ptr<sema::expr>& e, value_variant& out) const {
+    using kind = type::kind_enum;
+    if (auto lit = std::dynamic_pointer_cast<sema::literal>(e)) {
+        if (lit->type.is_builtin()) {
+            switch (lit->type.builtin.kind) {
+            case kind::i8: case kind::i16: case kind::i32: case kind::i64: {
+                if (std::holds_alternative<int64_t>(lit->value.v)) {
+                    out = static_cast<int64_t>(std::get<int64_t>(lit->value.v));
+                    return true;
+                }
+                if (std::holds_alternative<uint64_t>(lit->value.v)) {
+                    out = static_cast<uint64_t>(std::get<uint64_t>(lit->value.v));
+                    return true;
+                }
+                break;
+            }
+            case kind::u8: case kind::u16: case kind::u32: case kind::u64: {
+                if (std::holds_alternative<uint64_t>(lit->value.v)) {
+                    out = std::get<uint64_t>(lit->value.v);
+                    return true;
+                }
+                if (std::holds_alternative<int64_t>(lit->value.v)) {
+                    out = static_cast<uint64_t>(std::get<int64_t>(lit->value.v));
+                    return true;
+                }
+                break;
+            }
+            case kind::f16: case kind::f32: {
+                if (std::holds_alternative<cl_f32>(lit->value.v)) {
+                    cl_f32 h = std::get<cl_f32>(lit->value.v);
+                    float f;
+                    static_assert(sizeof(float) == 4, "expected IEEE single");
+                    uint32_t bits = h.bits;
+                    std::memcpy(&f, &bits, sizeof(float));
+                    out = static_cast<double>(f);
+                    return true;
+                }
+                break;
+            }
+            case kind::boolean: {
+                if (std::holds_alternative<int64_t>(lit->value.v)) {
+                    out = (std::get<int64_t>(lit->value.v) != 0);
+                    return true;
+                }
+                break;
+            }
+            case kind::string:
+            case kind::unit:
+            case kind::noreturn:
+                break;
+            }
+        }
+        return false;
+    }
+    if (auto un = std::dynamic_pointer_cast<sema::unary>(e)) {
+        value_variant inner;
+        if (!try_fold_expr(un->inner, inner)) return false;
+        if (un->op == "-") {
+            if (auto pi = std::get_if<int64_t>(&inner)) { out = -(*pi); return true; }
+            if (auto pu = std::get_if<uint64_t>(&inner)) { out = static_cast<int64_t>(-static_cast<int64_t>(*pu)); return true; }
+            if (auto pd = std::get_if<double>(&inner)) { out = -(*pd); return true; }
+        }
+        return false;
+    }
+    if (auto bin = std::dynamic_pointer_cast<sema::bin_op>(e)) {
+        value_variant lv, rv;
+        if (!try_fold_expr(bin->lhs, lv) || !try_fold_expr(bin->rhs, rv)) return false;
+        auto op = bin->op;
+        auto getd = [](const value_variant& v)->double {
+            if (const auto pd = std::get_if<double>(&v)) return *pd;
+            if (const auto pi = std::get_if<int64_t>(&v)) return static_cast<double>(*pi);
+            if (const auto pu = std::get_if<uint64_t>(&v)) return static_cast<double>(*pu);
+            return 0.0;
+            };
+        auto geti = [](const value_variant& v)->int64_t {
+            if (const auto pi = std::get_if<int64_t>(&v)) return *pi;
+            if (const auto pu = std::get_if<uint64_t>(&v)) return static_cast<int64_t>(*pu);
+            return 0;
+            };
+       
+        bool use_double = std::holds_alternative<double>(lv) || std::holds_alternative<double>(rv);
+        if (use_double) {
+            double l = getd(lv), r = getd(rv);
+            if (op == "+") out = l + r;
+            else if (op == "-") out = l - r;
+            else if (op == "*") out = l * r;
+            else if (op == "/") out = l / r;
+            else return false;
+            return true;
+        }
+        int64_t l = geti(lv), r = geti(rv);
+        if (op == "+") out = static_cast<int64_t>(l + r);
+        else if (op == "-") out = static_cast<int64_t>(l - r);
+        else if (op == "*") out = static_cast<int64_t>(l * r);
+        else if (op == "/") { if (r == 0) return false; out = static_cast<int64_t>(l / r); }
+        else if (op == "%") { if (r == 0) return false; out = static_cast<int64_t>(l % r); }
+        else return false;
+        return true;
+    }
+    return false;
+}
+
+void sema_builder::register_builtin_types() {
+    static const std::pair<const char*, type::kind_enum> builtins[] = {
+        {"i8", type::kind_enum::i8}, {"u8", type::kind_enum::u8},
+        {"i16", type::kind_enum::i16}, {"u16", type::kind_enum::u16},
+        {"i32", type::kind_enum::i32}, {"int", type::kind_enum::i32},
+        {"u32", type::kind_enum::u32}, {"i64", type::kind_enum::i64},
+        {"u64", type::kind_enum::u64}, {"f16", type::kind_enum::f16},
+        {"f32", type::kind_enum::f32}, {"noreturn", type::kind_enum::noreturn},
+        {"unit", type::kind_enum::unit}, {"()", type::kind_enum::unit},
+        {"string", type::kind_enum::string}, {"bool", type::kind_enum::boolean}
+    };
+    for (auto& b : builtins) {
+        symbol_entry e;
+        e.kind = symbol_kind::type_name;
+        e.type = type_ref::builtin_type(type{ b.second });
+        insert_symbol(b.first, e);
     }
 }
+
 
 std::shared_ptr<sema::module> sema_builder::take_module() { return std::move(mod_); }
 
 std::string sema_builder::resolve_function_name(const std::string& name) const {
 
-    if (func_sigs_.count(name)) return name;
+    if (name.find(DOUBLE_COLON) != std::string::npos) {
+        if (auto* se = lookup_symbol(name); se && se->kind == symbol_kind::function)
+            return name;
 
-    auto q = qualify(name);
-    if (func_sigs_.count(q)) return q;
-
-    for (auto& it : imports_) {
-        std::string cand = it.second + "::" + name;
-        if (func_sigs_.count(cand)) return cand;
+        throw std::runtime_error("undefined function (qualified): " + name);
     }
-    throw std::runtime_error("undefined function : " + name);
+
+    if (auto* se = lookup_symbol(name); se && se->kind == symbol_kind::function)
+        return name;
+
+    if (!current_package_.empty()) {
+        std::string q = qualify(name);
+        if (auto* se = lookup_symbol(q); se && se->kind == symbol_kind::function)
+            return q;
+    }
+
+    throw std::runtime_error("undefined function: " + name);
 }
 
+const sema_builder::symbol_entry* sema_builder::lookup_function_symbol(const std::string& name) const {
+    if (auto* se = lookup_symbol(name); se && se->kind == symbol_kind::function) return se;
+
+    if (!current_package_.empty()) {
+        std::string q = current_package_ + "::" + name;
+        if (auto* se = lookup_symbol(q); se && se->kind == symbol_kind::function) return se;
+    }
+    for (auto& kv : imports_) {
+        std::string cand = kv.second + "::" + name;
+        if (auto* se = lookup_symbol(cand); se && se->kind == symbol_kind::function) return se;
+
+        std::string alias_cand = kv.first + "::" + name;
+        if (auto* se2 = lookup_symbol(alias_cand); se2 && se2->kind == symbol_kind::function) return se2;
+    }
+    return nullptr;
+}
+
+bool sema_builder::insert_symbol(const std::string& name, symbol_entry& entry) {
+    if (symbol_scopes_.empty()) push_scope(scope_kind::global);
+    auto& cur = symbol_scopes_.back().symbols;
+    if (cur.count(name)) return false;
+    cur.emplace(name, entry);
+    return true;
+}
+
+type_ref sema_builder::resolve_type_symbol(const std::string& name) const {
+    if (auto* se = lookup_symbol(name)) {
+        if (se->kind == symbol_kind::type_name) return se->type;
+    }
+    throw std::runtime_error("unknown type: " + name);
+}
 
 type_ref sema_builder::resolve_type(const std::string& name) const {
-    for (auto it = type_scopes_.rbegin(); it != type_scopes_.rend(); ++it) {
-        auto f = it->find(name);
-        if (f != it->end()) return f->second;
+    if (auto* se = lookup_symbol(name); se && se->kind == symbol_kind::type_name) {
+        return se->type;
     }
-    return type_ref::builtin_type(type::from_string(name));
+
+    if (!current_package_.empty()) {
+        std::string q = current_package_ + DOUBLE_COLON + name;
+        if (auto* se = lookup_symbol(q); se && se->kind == symbol_kind::type_name) {
+            return se->type;
+        }
+    }
+
+    for (const auto& kv : imports_) {
+        std::string cand = kv.second + DOUBLE_COLON + name;
+        if (auto* se = lookup_symbol(cand); se && se->kind == symbol_kind::type_name) {
+            return se->type;
+        }
+        std::string alias_cand = kv.first + DOUBLE_COLON + name;
+        if (auto* se2 = lookup_symbol(alias_cand); se2 && se2->kind == symbol_kind::type_name) {
+            return se2->type;
+        }
+    }
+
+    try {
+        return type_ref::builtin_type(type::from_string(name));
+    } catch (...) {}
+
+    throw std::runtime_error("unknown type: " + name);
 }
+
+
 
 type_ref sema_builder::make_type_ref_from(ClearLanguageParser::TypeContext* ctx) {
     if (const auto nt = dynamic_cast<ClearLanguageParser::NamedTypeContext*>(ctx)) {
-        return type_ref::builtin_type(type::from_string(nt->IDENT()->getText()));
+        return resolve_type(nt->IDENT()->getText());
     }
     if (dynamic_cast<ClearLanguageParser::UnitTypeContext*>(ctx)) {
 	    return type_ref::builtin_type(type{type::kind_enum::unit});
@@ -195,21 +340,23 @@ type_ref sema_builder::make_type_ref_from(ClearLanguageParser::TypeContext* ctx)
     throw std::runtime_error("unknown type alt");
 }
 
-std::any sema_builder::visitStart(ClearLanguageParser::StartContext* ctx) {
+void sema_builder::collect_signatures(ClearLanguageParser::StartContext* ctx) {
 
-    if (auto* pkg = ctx->packageDecl()) {
-        current_package_ = pkg->qualifiedIdent()->getText();
+    file_ctx_guard g(*this, ctx);
+
+    for (auto* cd : ctx->constantDecl()) {
+        auto name = cd->IDENT()->getText();
+        std::string qualified_name = qualify(name);
+
+
     }
 
-    for (auto* imp : ctx->importDecl()) {
-    	const std::string full_path = imp->qualifiedIdent()->getText();
-        std::string alias = imp->AS() ? imp->IDENT()->getText() : full_path;
-        imports_[alias] = full_path;
+    for (auto* cd : ctx->constantDecl()) {
+        // Currently not implement
     }
 
     for (auto* fd : ctx->funcDecl()) {
-        auto name = fd->name->getText();
-        std::string qualified_name = qualify(name);
+        std::string qualified_name = qualify(fd->name->getText());
 
         const auto sig = std::make_shared<function_sig>();
         if (const auto pl = fd->paramList()) {
@@ -218,7 +365,13 @@ std::any sema_builder::visitStart(ClearLanguageParser::StartContext* ctx) {
             }
         }
         sig->return_type = std::make_shared<type_ref>(make_type_ref_from(fd->type()));
-        func_sigs_[qualified_name] = sig;
+
+        symbol_entry e;
+        e.kind = symbol_kind::function;
+        e.function_sig = sig;
+        e.type = type_ref::function_type(sig);
+        if (!insert_symbol(qualified_name, e))
+            throw std::runtime_error("function redeclaration: " + qualified_name);
 
         // pick up entry point name if any
         for (auto* at : fd->attributes()) {
@@ -229,31 +382,46 @@ std::any sema_builder::visitStart(ClearLanguageParser::StartContext* ctx) {
             }
         }
     }
+}
+
+
+void sema_builder::construct_target(ClearLanguageParser::StartContext* ctx) {
+
+    file_ctx_guard g(*this, ctx);
 
     for (auto* fd : ctx->funcDecl()) {
-        auto fun = std::make_shared<function>();
-        fun->name = qualify(fd->name->getText());
+        auto func = std::make_shared<function>();
+        func->name = qualify(fd->name->getText());
+
         if (const auto pl = fd->paramList()) {
             for (auto* p : pl->param()) {
                 sema::param prm;
                 prm.name = p->IDENT()->getText();
                 prm.type = make_type_ref_from(p->type());
-                fun->params.push_back(std::move(prm));
+                func->params.push_back(std::move(prm));
             }
         }
-        fun->return_type = make_type_ref_from(fd->type());
-        fun->body = std::make_shared<block>();
+        func->return_type = make_type_ref_from(fd->type());
+        func->body = std::make_shared<block>();
 
-        current_return_type_ = fun->return_type;
-        var_types_.emplace_back();
-        for (auto& prm : fun->params) var_types_.back()[prm.name] = prm.type;
+        current_return_type_ = func->return_type;
+
+        scope_guard g(*this, scope_kind::function);
+
+        for (auto& prm : func->params) {
+            symbol_entry v;
+            v.kind = symbol_kind::variable;
+            v.type = prm.type;
+            v.is_mutable = true;
+            if (!insert_symbol(prm.name, v))
+                throw std::runtime_error("parameter redeclaration: " + prm.name);
+        }
 
         auto any_blk = visit(fd->block());
-        *fun->body = *std::any_cast<std::shared_ptr<block>>(any_blk);
-        var_types_.pop_back();
-        mod_->functions.push_back(std::move(fun));
+        *func->body = *std::any_cast<std::shared_ptr<block>>(any_blk);
+
+        mod_->functions.push_back(std::move(func));
     }
-    return nullptr;
 }
 
 std::any sema_builder::visitIntLiteral(ClearLanguageParser::IntLiteralContext* ctx) {
@@ -397,34 +565,70 @@ std::any sema_builder::visitMulExpr(ClearLanguageParser::MulExprContext* ctx) {
 }
 
 std::any sema_builder::visitVarRef(ClearLanguageParser::VarRefContext* ctx) {
-    const auto node = std::make_shared<var_ref>();
-    node->name = ctx->IDENT()->getText();
+    
+    std::string name;
+    if (auto* q = ctx->qualifiedIdent()) name = q->getText();
+    else name = ctx->getText();
 
-    for (auto it = var_types_.rbegin(); it != var_types_.rend(); ++it) {
-        auto f = it->find(node->name);
-        if (f != it->end()) {
-	        node->type = f->second;
-        	return std::static_pointer_cast<expr>(node);
+    if (auto* se = lookup_symbol(name)) {
+        switch (se->kind) {
+        case symbol_kind::variable: {
+            auto vr = std::make_shared<var_ref>();
+            vr->name = name;
+            vr->type = se->type;
+            return std::static_pointer_cast<expr>(vr);
+        }
+        case symbol_kind::function: {
+            // fallback
+            break;
+        }
+        case symbol_kind::constant: {
+            if (!std::holds_alternative<std::monostate>(se->value)) {
+            	const auto lit = std::make_shared<literal>();
+                lit->type = se->type;
+
+                if (const auto pi = std::get_if<int64_t>(&se->value)) lit->value = value{ lit->type, *pi, false };
+                else if (const auto pu = std::get_if<uint64_t>(&se->value)) lit->value = value{ lit->type, *pu, false };
+                else if (const auto pb = std::get_if<bool>(&se->value)) lit->value = value{ lit->type, static_cast<int64_t>(*pb ? 1 : 0), false };
+                else if (const auto pd = std::get_if<double>(&se->value)) {
+                	const float f = static_cast<float>(*pd);
+                    cl_f32 bits; std::memcpy(&bits, &f, sizeof(float));
+                    lit->value = value{ lit->type, bits, false };
+                }
+                else if (const auto ps = std::get_if<std::string>(&se->value)) {
+                    lit->value = make_string(*ps);
+                }
+                return std::static_pointer_cast<expr>(lit);
+            }
+            return se->const_expr;
+        }
+        case symbol_kind::type_name:
+            throw std::runtime_error("type name used as value: " + name);
         }
     }
 
    try {
-       std::string resolved = resolve_function_name(node->name);
-       const auto fit = func_sigs_.find(resolved);
+   		const std::string fqn = resolve_function_name(name);
+   		auto* fse = lookup_symbol(fqn);
 
-   	   if (fit != func_sigs_.end()) {
-           node->name = resolved;
-           node->type = type_ref::function_type(fit->second);
-           return std::static_pointer_cast<expr>(node);
-   	   }
+        if (!fse || fse->kind != symbol_kind::function)
+            throw std::runtime_error("function symbol disappeared: " + fqn);
+
+        const auto vr = std::make_shared<var_ref>();
+        vr->name = fqn;
+        vr->type = fse->type;
+        return std::static_pointer_cast<expr>(vr);
+   	  
    } catch (...) {
 	   
    }
-    throw std::runtime_error("undefined variable: " + node->name);
+   throw std::runtime_error("undefined identifier: " + name);
 }
 
 std::any sema_builder::visitBlock(ClearLanguageParser::BlockContext* ctx) {
     auto blk = std::make_shared<block>();
+    scope_guard g(*this, scope_kind::block);
+
     for (auto* s : ctx->stmt()) {
         if (auto* sr = dynamic_cast<ClearLanguageParser::StmtReturnContext*>(s)) {
             blk->statements.push_back(std::any_cast<std::shared_ptr<stmt_return>>(visit(sr)));
@@ -570,9 +774,19 @@ std::any sema_builder::visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext*
     }
     node->init_expr = init_expr;
     
-    var_types_.back().emplace(node->name, node->decl_type);
+    symbol_entry e;
+    e.kind = symbol_kind::variable;
+    e.type = node->decl_type;
+    e.is_mutable = true;
+    if (!insert_symbol(node->name, e))
+        throw std::runtime_error("redefinition in same scope: " + node->name);
     return node;
 }
+
+std::any sema_builder::visitConstantDecl(ClearLanguageParser::ConstantDeclContext* context) {
+    throw std::runtime_error("not implement");
+}
+
 
 std::any sema_builder::visitStmtReturn(ClearLanguageParser::StmtReturnContext* ctx) {
     auto node = std::make_shared<stmt_return>();
@@ -632,20 +846,25 @@ std::any sema_builder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext*
 	    	const auto vr = std::dynamic_pointer_cast<var_ref>(cur);
 			if (!vr) throw std::runtime_error("can only call functions by name");
 
-			const auto call = std::make_shared<sema::call>();
-            call->callee = resolve_function_name(vr->name);
+            std::string callee_fqn = resolve_function_name(vr->name);
+            auto* fse = lookup_symbol(callee_fqn);
+            if (!fse || fse->kind != symbol_kind::function)
+                throw std::runtime_error("call to undefined function: " + vr->name);
 
-            call->args.clear();
+            const auto& sig = fse->function_sig;
+
+            const auto call = std::make_shared<sema::call>();
+            call->callee = callee_fqn;
+
             if (const auto al = cs->argList()) {
 	            for (auto* ectx : al->expr()) {
                     call->args.push_back(std::any_cast<std::shared_ptr<expr>>(visit(ectx)));
 				}
             }
 
-			auto it = func_sigs_.find(call->callee);
-			if (it == func_sigs_.end()) throw std::runtime_error("call to undefined function: " + call->callee);
-            const auto& sig = it->second;
-			if (sig->param_types.size() != call->args.size()) throw std::runtime_error("argument count mismatch in function call: " + call->callee);
+			if (sig->param_types.size() != call->args.size()) 
+                throw std::runtime_error("argument count mismatch in function call: " + call->callee);
+
             for (size_t i = 0; i < call->args.size(); ++i) {
                 if (!(call->args[i]->type.is_builtin() && sig->param_types[i].is_builtin() &&
                     call->args[i]->type.builtin.kind == sig->param_types[i].builtin.kind)) {

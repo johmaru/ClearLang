@@ -24,9 +24,11 @@ void build_command::parse_build_script() {
 	auto* tree = parser.start();
 
 	sema_builder sb;
-	sb.visit(tree);
-	auto mod = sb.take_module();
 
+	sb.collect_signatures(tree);
+	sb.construct_target(tree);
+
+	auto mod = sb.take_module();
 	extract_build_functions(*mod);
 }
 
@@ -82,7 +84,9 @@ void build_command::execute_build(bool debug) const {
 	if (sources.empty())
 		throw std::runtime_error("no source files found :" + source_root_);
 
-	auto merged = std::make_shared<sema::module>();
+	sema_builder builder;
+
+	// Phase1
 	for (const auto& path : sources) {
 		std::ifstream fs(path);
 		if (!fs.is_open())
@@ -92,28 +96,37 @@ void build_command::execute_build(bool debug) const {
 		ClearLanguageLexer lexer(&input);
 		antlr4::CommonTokenStream tokens(&lexer);
 		ClearLanguageParser parser(&tokens);
-
 		auto* tree = parser.start();
-		sema_builder sb;
-		sb.visit(tree);
-		auto m = sb.take_module();
 
-		for (auto& f : m->functions)
-			merged->functions.push_back(std::move(f));
-
-		if (merged->entry_name.empty() && !m->entry_name.empty())
-			merged->entry_name = m->entry_name;
+		builder.collect_signatures(tree);
 	}
 
-	if (!entry_point_.empty())
-		merged->entry_name = entry_point_;
+	// Phase2
+	for (const auto& path : sources) {
+		std::ifstream fs(path);
+		if (!fs.is_open())
+			throw std::runtime_error("Can not opened file : " + path);
 
-	if (merged->entry_name.empty())
+		antlr4::ANTLRInputStream input(fs);
+		ClearLanguageLexer lexer(&input);
+		antlr4::CommonTokenStream tokens(&lexer);
+		ClearLanguageParser parser(&tokens);
+		auto* tree = parser.start();
+
+		builder.construct_target(tree);
+	}
+
+	auto mod = builder.take_module();
+
+	if (!entry_point_.empty())
+		mod->entry_name = entry_point_;
+
+	if (mod->entry_name.empty())
 		throw std::runtime_error("entry point not resolved");
 
 	auto ctx = std::make_unique<llvm::LLVMContext>();
 	ir_gen_from_sema ir(*ctx, "ClearModule");
-	ir.emit_module(*merged);
+	ir.emit_module(*mod);
 
 	if (debug) {
 		support_execute_debug(ir, ctx);

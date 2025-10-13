@@ -165,7 +165,7 @@ struct value {
 
 inline value::value(const type_ref& type,
     std::variant<int64_t, uint64_t, std::monostate, function_value, cl_half, std::string, cl_f32> value,
-    bool cond) : type(type), v(std::move(value)), is_untyped_int(cond) {}
+    const bool cond) : type(type), v(std::move(value)), is_untyped_int(cond) {}
 
 
 inline bool is_numeric(const value& val) {

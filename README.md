@@ -56,7 +56,6 @@ conan install . -s build_type=Debug -of out/conan/ninja-debug -b missing -c tool
 cmake --build --preset ninja-debug --target generate_parser
 cmake --preset ninja-debug
 cmake --build --preset ninja-debug
-.\out\build\ninja-debug\Clear.exe --emit-llvm or .\out\build\ninja-debug\Clear.exe --debug-print
 ```
 
 Release
@@ -66,6 +65,8 @@ cmake --build --preset ninja-debug --target generate_parser
 cmake --preset ninja-release
 cmake --build --preset ninja-release
 ```
+
+Build and run command is ``` Clear build --debug ```, If you have any questions in the build file, please [refer to the example](./example/).
 
 Notes
 - ANTLR codegen runs automatically (custom target `generate_parser` and dependency from `Clear`).

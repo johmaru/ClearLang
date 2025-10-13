@@ -24,6 +24,8 @@
 - as!         | force cast (Currentlly support string -> any int but not support string -> float) if contains literal,return error.
 - if          | 
 - else        | 
+- import      | package import
+- package     | assign package
 
 Example
 
@@ -113,6 +115,27 @@ func if_test(a:u8, b:u8, c:bool) -> u8 {
 	}
 	
 	return a - b;
+}
+```
+
+## Build
+
+Package name is must use 'build'.
+
+Entry function is 'configure', curentlly this programming language is not support EntryPoint in the build.clr file.
+
+Return Value must use unit.
+
+An configure function must need that export function __set_entry, __add_source, __set_output.
+
+Example
+
+```
+package build; 
+func configure() -> unit {
+	__set_entry("main::main"); 
+	__add_source("src");
+	__set_output("build / bin");
 }
 ```
 
