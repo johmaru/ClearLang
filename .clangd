@@ -1,2 +1,9 @@
 CompileFlags:
-  Add: [-fexceptions, -frtti]
+  CompilationDatabase: out/build/ninja-debug
+
+Diagnostics:
+  ClangTidy:
+    Add: [google-*]
+    Remove: [google-readability-braces-around-statements]
+    CheckOptions:
+      google-readability-function-size.StatementThreshold: 200

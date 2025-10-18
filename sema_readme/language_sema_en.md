@@ -2,39 +2,39 @@
 
 ## Values
 
-- u8          | unsigned 8bit integer
-- i8          | signed 8bit integer
-- u16         | unsigned 16bit integer
-- i16         | signed 16bit integer
-- u32         | unsigned 32bit integer
-- i32         | signed 32bit integer
-- u64         | unsigned 64bit integer
-- i64         | signed 64bit integer
-- f16         | 16bit floating point
-- f32         | 32bit floating point
-- string      | string value
-- bool        | boolean value (has true or false)
-- is          | '=='
-- not         | '!='
-- or          | '||'
-- and         | '&&'
-- noreturn    | not back a control
-- unit or ()  | no value, return number of zero size value
-- as          | cast any type(Currentlly support any int -> any int but not support string -> float)
-- as!         | force cast (Currentlly support string -> any int but not support string -> float) if contains literal,return error.
-- if          | 
-- else        | 
-- import      | package import
-- package     | assign package
+- u8 | unsigned 8bit integer
+- i8 | signed 8bit integer
+- u16 | unsigned 16bit integer
+- i16 | signed 16bit integer
+- u32 | unsigned 32bit integer
+- i32 | signed 32bit integer
+- u64 | unsigned 64bit integer
+- i64 | signed 64bit integer
+- f16 | 16bit floating point
+- f32 | 32bit floating point
+- string | string value
+- bool | boolean value (has true or false)
+- is | '=='
+- not | '!='
+- or | '||'
+- and | '&&'
+- noreturn | not back a control
+- unit or () | no value, return number of zero size value
+- as | cast any type(Currentlly support any int -> any int but not support string -> float)
+- as! | force cast (Currentlly support string -> any int but not support string -> float) if contains literal,return error.
+- if |
+- else |
+- import | package import
+- package | assign package
 
 Example
 
 ```
-[EntryPoint] func test() -> i64 {    
+[EntryPoint] func test() -> i64 {
 
-    x : i64 = -35;     
+    x : i64 = -35;
     y : i64 = 61; // comment can be
-    
+
     return x + y;
 }
 ```
@@ -59,22 +59,25 @@ func decrease(a:f16, b:f16) -> f16 {
 ```
 
 string Example
-```
+
 ```
 
-* string cant be connect other type. only string + string is ok.
+```
+
+- string cant be connect other type. only string + string is ok.
 
 Unit Example
 
-``` 
-[EntryPoint] 
+```
+[EntryPoint]
 func test() -> unit {
     x : i64 = -35;
     y : i64 = 61;
-    
+
     return();
 }
 ```
+
 execute result is no value.
 
 If an untyped integer exists, it is identified as i32.
@@ -99,6 +102,7 @@ func decrease(a:i16, b:i16) -> i16 {
 ```
 
 if Example
+
 ```
 [EntryPoint]
 func test() -> () {
@@ -113,7 +117,7 @@ func if_test(a:u8, b:u8, c:bool) -> u8 {
     if (c) {
 		return a + b;
 	}
-	
+
 	return a - b;
 }
 ```
@@ -126,22 +130,30 @@ Entry function is 'configure', curentlly this programming language is not suppor
 
 Return Value must use unit.
 
-An configure function must need that export function __set_entry, __add_source, __set_output.
+An configure function must need that export function **set_entry, **add_source, **set_output, **set_target.
+
+- \_\_set_entry(string function_full_name) | set entry function full name.
+- \_\_add_source(string source_path) | add source path.
+- \_\_set_output(string output_path) | set output path.
+- \_\_set_target(string target_kind) | set target kind. (exe or dll or none)
+- \_\_set_app_name(string app_name) | set application name.
 
 Example
 
 ```
-package build; 
+package build;
 func configure() -> unit {
-	__set_entry("main::main"); 
+	__set_entry("main::main");
 	__add_source("src");
-	__set_output("build / bin");
+	__set_output("./build");
+    __set_target("exe");
 }
 ```
 
 ## Exported Function
 
 Printf(string)
+
 ```
 func test() -> i16 {
     a: i16 = 50;
@@ -152,36 +164,36 @@ func test() -> i16 {
 }
 ```
 
-__cl_i8_printf
+\_\_cl_i8_printf
 
-__cl_i8_printfn
+\_\_cl_i8_printfn
 
-__cl_u8_printfn
+\_\_cl_u8_printfn
 
-__cl_i16_printfn
+\_\_cl_i16_printfn
 
-__cl_f16_printfn
+\_\_cl_f16_printfn
 
-__cl_f32_printfn
+\_\_cl_f32_printfn
 
-__cl_parse_i8
+\_\_cl_parse_i8
 
-__cl_parse_u8
+\_\_cl_parse_u8
 
-__cl_parse_i16
+\_\_cl_parse_i16
 
-__cl_parse_u16
+\_\_cl_parse_u16
 
-__cl_parse_i32
+\_\_cl_parse_i32
 
-__cl_parse_u32
+\_\_cl_parse_u32
 
-__cl_parse_i64
+\_\_cl_parse_i64
 
-__cl_parse_u64
+\_\_cl_parse_u64
 
 ## For build,Export Function
 
-__set_entry
-__add_source
-__set_output
+**set_entry
+**add_source
+\_\_set_output

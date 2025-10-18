@@ -1,0 +1,5 @@
+Checks: '-*,llvm-*,clang-analyzer-*,google-readability-braces-around-statements'
+WarningsAsErrors: 'llvm-*,clang-analyzer-*,google-readability-braces-around-statements,-llvm-include-order'
+CheckOptions:
+  - key: google-readability-braces-around-statements.ShortStatementLines
+    value: '2'
