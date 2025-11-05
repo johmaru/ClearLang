@@ -29,7 +29,7 @@ CL_API void __cl_set_exit_code(const int32_t c) {
 }
 
 #ifndef CLEAR_RUNTIME_OMIT_EXIT
-extern "C" int32_t __cl_exit_code() {
+CL_API int32_t __cl_exit_code() {
     return g_exit_code.load(std::memory_order_relaxed);
 }
 #endif

@@ -209,6 +209,14 @@ static void emitObjectFile(llvm::Module& module, const std::string& obj_path) {
     dest.flush();
 }
 
+#ifndef HAVE_LLD
+static void linkWithSystemLinker(const std::string& obj_path, const std::string& out_path,
+                                 const bool AS_DLL) {
+    // TODO: Implement system linker invocation
+    // e.g., using std::system() or process spawning to call ld/clang
+    throw std::runtime_error("System linker not yet implemented");
+}
+#endif
 void BuildCommand::executeBuild(bool debug) const {
     std::cout << "Execute build from : " << entry_point_ << "\n";
 

@@ -2,5 +2,5 @@ package build;
 func configure() -> unit {
 	__set_entry("main::main"); 
 	__add_source("src");
-	__set_output("build / bin");
+	__set_output("build/bin");
 }

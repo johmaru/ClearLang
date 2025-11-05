@@ -1060,10 +1060,8 @@ std::any SemaBuilder::visitConstMulExpr(ClearLanguageParser::ConstMulExprContext
             throw std::runtime_error("type mismatch in binary op");
         }
 
-        if ((cur->type.isBuiltin() && RHS->type.isBuiltin() && isNumKind(cur->type.builtin.kind)) ||
-            (cur->type.isBuiltin() && RHS->type.isBuiltin() && isNumKind(RHS->type.builtin.kind))) {
-            throw std::runtime_error(
-                "string type can only be used with + operator for concatenation");
+        if (!isNumKind(cur->type.builtin.kind) || !isNumKind(RHS->type.builtin.kind)) {
+            throw std::runtime_error("operator " + OPER + " requires numeric operand types");
         }
 
         const auto BIN = std::make_shared<BinOp>();
