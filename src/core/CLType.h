@@ -325,7 +325,7 @@ inline const std::string& asString(const Value& val) {
     return std::get<std::string>(val.v);
 }
 
-inline Value makeString(const std::string& str) {
+inline Value makeString(std::string str) {
     return Value{TypeRef::builtinType(Type{Type::kind_enum::STRING}), std::move(str), false};
 }
 
