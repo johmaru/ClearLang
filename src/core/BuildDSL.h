@@ -2,15 +2,19 @@
 #include <string>
 #include <vector>
 
-class build_dsl {
-public:
-	static void set_entry(std::string entry);
-	static void add_source(std::string path);
-	static void set_output(std::string path);
-	static void add_dependency(std::string dep);
+class BuildDsl {
+  public:
+    static void setEntry(std::string entry);
+    static void addSource(std::string path);
+    static void setOutput(std::string path);
+    static void addDependency(std::string dep);
+    static void setTarget(std::string kind);
+    static void setAppName(std::string name);
 
-private:
-	static inline std::string entry_point_;
-	static inline std::vector<std::string> source_paths_;
-	static inline std::string output_path_;
+  private:
+    static inline std::string entry_point;
+    static inline std::vector<std::string> source_paths;
+    static inline std::string output_path;
+    static inline std::string target_kind;
+    static inline std::string app_name;
 };

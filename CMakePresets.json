@@ -2,48 +2,24 @@
   "version": 6,
   "configurePresets": [
     {
-      "name": "ninja-debug",
+      "name": "ninja-debug-vcpkg",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/out/build/ninja-debug",
+      "binaryDir": "out/build/ninja-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/wrap_conan_toolchain.cmake",
-        "CONAN_OUT_ROOT": "${sourceDir}/out/conan/ninja-debug",
-        "CMAKE_GENERATOR_TOOLSET": ""
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
-      "environment": {
-        "Platform": "",
-        "CMAKE_GENERATOR_PLATFORM": "",
-        "VSCMD_ARG_TGT_ARCH": "x64"
-      }
-    },
-    {
-      "name": "ninja-release",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/out/build/ninja-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/wrap_conan_toolchain.cmake",
-        "CONAN_OUT_ROOT": "${sourceDir}/out/conan/ninja-release",
-        "CMAKE_GENERATOR_TOOLSET": ""
-      },
-      "environment": {
-        "Platform": "",
-        "CMAKE_GENERATOR_PLATFORM": "",
-        "VSCMD_ARG_TGT_ARCH": "x64"
-      }
+      "environment": { "VCPKG_ROOT": "C:/src/vcpkg" }
     }
   ],
   "buildPresets": [
     {
-      "name": "ninja-debug",
-      "configurePreset": "ninja-debug"
-    },
-    {
-      "name": "ninja-release",
-      "configurePreset": "ninja-release"
+      "name": "ninja-debug-vcpkg",
+      "configurePreset": "ninja-debug-vcpkg"
     }
   ]
 }

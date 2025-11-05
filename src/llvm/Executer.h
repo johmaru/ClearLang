@@ -1,19 +1,16 @@
 #pragma once
 
+#include "../ir/IRGenFromSema.h"
+#include "../sema/SemaBuilder.h"
+#include "ClearLanguageParser.h"
 
 #include <ConsoleErrorListener.h>
-#include <iostream>
-#include <filesystem>
-#include <string>
-#include "ClearLanguageParser.h"
-#include "../sema/SemaBuilder.h"
-#include "../ir/IRGenFromSema.h"
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/Support/TargetSelect.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Transforms/Utils/Cloning.h>
-#include "../core/CLType.h"
 
-int execute(int argc,const char* argv[],ClearLanguageParser& parser);
 
-int support_execute_debug(ir_gen_from_sema& ir, std::unique_ptr<llvm::LLVMContext>& ctx);
+int execute(int argc, const char* argv[], ClearLanguageParser& parser);
+
+int supportExecuteDebug(IrGenFromSema& irg, std::unique_ptr<llvm::LLVMContext>& ctx);

@@ -1,45 +1,52 @@
 #pragma once
 #include "CLType.h"
-#include <cmath>
+
 #include <variant>
 
 namespace sema_utils {
 
-inline void normalize_value_storage(value& val) {
-    const auto& t = val.type;
-    auto unsigned_kind = [](const type& bt){
-        return bt.kind == type::kind_enum::u8 || bt.kind == type::kind_enum::u16 || bt.kind == type::kind_enum::u32 || bt.kind == type::kind_enum::u64;
+inline void normalizeValueStorage(Value& val) {
+    const auto& t_ref = val.type;
+    auto unsigned_kind = [](const Type& b_type) {
+        return b_type.kind == Type::kind_enum::U8 || b_type.kind == Type::kind_enum::U16 ||
+               b_type.kind == Type::kind_enum::U32 || b_type.kind == Type::kind_enum::U64;
     };
-    if (t.is_builtin() && unsigned_kind(t.builtin)) {
-        if (std::holds_alternative<int64_t>(val.v))
+    if (t_ref.isBuiltin() && unsigned_kind(t_ref.builtin)) {
+        if (std::holds_alternative<int64_t>(val.v)) {
             val.v = static_cast<uint64_t>(std::get<int64_t>(val.v));
+        }
     } else {
-        if (std::holds_alternative<uint64_t>(val.v))
+        if (std::holds_alternative<uint64_t>(val.v)) {
             val.v = static_cast<int64_t>(std::get<uint64_t>(val.v));
+        }
     }
 }
 
-inline value coerce_untyped_int_to(const value& in, const type_ref& target) {
-    if (!target.is_builtin()) throw std::runtime_error("cannot coerce to non-builtin");
-    if (target.builtin.kind == type::kind_enum::unit || target.builtin.kind == type::kind_enum::noreturn)
-        throw std::runtime_error("cannot coerce to unit/noreturn");
-
-    value out{target, std::monostate{}, false};
-    if (target.builtin.is_unsigned()) {
-        uint64_t u = std::holds_alternative<uint64_t>(in.v)
-            ? std::get<uint64_t>(in.v)
-            : static_cast<uint64_t>(std::get<int64_t>(in.v));
-        out.v = u;
-    } else {
-        int64_t s = std::holds_alternative<int64_t>(in.v)
-            ? std::get<int64_t>(in.v)
-            : static_cast<int64_t>(std::get<uint64_t>(in.v));
-        out.v = s;
+inline Value coerceUntypedIntTo(const Value& in_val, const TypeRef& target) {
+    if (!target.isBuiltin()) {
+        throw std::runtime_error("cannot coerce to non-builtin");
     }
-    auto nv = as_num2(out);
-    if (!fits(target, nv)) {
+    if (target.builtin.kind == Type::kind_enum::UNIT ||
+        target.builtin.kind == Type::kind_enum::NORETURN) {
+        throw std::runtime_error("cannot coerce to unit/noreturn");
+    }
+
+    Value out{target, std::monostate{}, false};
+    if (target.builtin.isUnsigned()) {
+        uint64_t u_holds = std::holds_alternative<uint64_t>(in_val.v)
+                               ? std::get<uint64_t>(in_val.v)
+                               : static_cast<uint64_t>(std::get<int64_t>(in_val.v));
+        out.v = u_holds;
+    } else {
+        int64_t i_holds = std::holds_alternative<int64_t>(in_val.v)
+                              ? std::get<int64_t>(in_val.v)
+                              : static_cast<int64_t>(std::get<uint64_t>(in_val.v));
+        out.v = i_holds;
+    }
+    auto n_variant = asNum2(out);
+    if (!fits(target, n_variant)) {
         std::string msg = "initializer out of range for type ";
-        msg += type_name(target);
+        msg += typeName(target);
         throw std::runtime_error(msg);
     }
     return out;

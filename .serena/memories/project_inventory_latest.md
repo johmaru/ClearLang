@@ -1,4 +1,4 @@
-Files of interest snapshot (2025-10-06)
+Files of interest snapshot (2025-10-13)
 
 Key files:
 - CMakeLists.txt

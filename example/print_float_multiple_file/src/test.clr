@@ -1,0 +1,10 @@
+package test;
+
+func if_test(a:u8, b:u8, c:bool) -> u8 {
+    if (c) {
+		return a + b;
+	} else {
+		return a - b;
+	}
+
+}

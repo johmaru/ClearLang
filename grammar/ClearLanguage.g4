@@ -1,6 +1,6 @@
 grammar ClearLanguage;
 
-start: packageDecl? importDecl* (funcDecl)* EOF;
+start: packageDecl? importDecl* (constantDecl | funcDecl)* EOF;
 
 packageDecl
     : PACKAGE qualifiedIdent SEMI
@@ -32,9 +32,6 @@ addExpr
     : left=mulExpr (op+=(PLUS|MINUS) right+=mulExpr)*
     ;
 
-PLUS: '+';
-MINUS: '-';
-
 mulExpr
     : left=unaryExpr (op+=('*'|'/'|'%') right+=unaryExpr)*
     ;
@@ -65,7 +62,7 @@ primary
     | INT                        #intLiteral
     | STRING                     #stringLiteral
     | (TRUE | FALSE)             #boolLiteral
-    | IDENT                      #varRef
+    | qualifiedIdent             #varRef
     | '(' expr ')'               #parenExpr
     | '(' ')'                    #unitLiteral
     ;
@@ -113,7 +110,37 @@ ifStmt
     ;
 
 varDecl
-    : IDENT COLON type (ASSIGN expr)? SEMI
+    : LET IDENT COLON type (ASSIGN expr)? SEMI #letStmtDecl
+    | VAR IDENT COLON type (ASSIGN expr)? SEMI #varStmtDecl
+    ;
+
+constantDecl
+    : CONSTANT IDENT COLON type (ASSIGN constExpr)? SEMI
+    ;
+
+constExpr
+    : constAddExpr
+    ;
+
+constAddExpr
+    : left=constMulExpr ( op+=(PLUS|MINUS) right+=constMulExpr )*
+    ;
+
+constMulExpr
+    : left=constUnary (op+=('*'|'/'|'%') right+=constUnary )*
+    ;
+
+constUnary
+    : '-' inner=constUnary #unaryConstMinus
+    | constPrimary          #unaryConstPrimary
+    ;
+
+constPrimary
+    : INT #intConstLiteral
+    | FLOAT #floatConstLiteral
+    | STRING #stringConstLiteral
+    | (TRUE | FALSE) #boolConstLiteral
+    | '(' constExpr ')' #parenConstExpr
     ;
 
 argList
@@ -122,6 +149,9 @@ argList
 
 PACKAGE: 'package';
 IMPORT: 'import';
+CONSTANT: 'const';
+LET: 'let';
+VAR: 'var';
 IF: 'if';
 ELSE: 'else';
 FUNC: 'func';
@@ -136,6 +166,9 @@ AND: 'and';
 OR: 'or';
 ASSIGN: '=';
 RETURN: 'return';
+PLUS: '+';
+MINUS: '-';
+
 
 
 STRING: '"' (ESC_SEQ | ~["\\])* '"';

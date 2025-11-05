@@ -1,0 +1,11 @@
+{
+  "name": "clearlanguage",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "antlr4",
+    {
+      "name": "llvm",
+      "features": [ "lld", "tools" ]
+    }
+  ]
+}

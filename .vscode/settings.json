@@ -1,6 +1,4 @@
 {
     "cmake.sourceDirectory": "${workspaceFolder}",
     "cmake.useCMakePresets": "always",
-    "cmake.configurePreset": "msvc-ninja-release",
-    "cmake.buildPreset": "msvc-ninja-release"
 }
