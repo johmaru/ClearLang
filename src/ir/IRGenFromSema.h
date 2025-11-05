@@ -1,35 +1,48 @@
 #pragma once
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Module.h>
-
-#include <memory>
-#include <unordered_map>
-
 #include "../sema/SemaIR.h"
 
-class ir_gen_from_sema {
- public:
-  ir_gen_from_sema(llvm::LLVMContext& ctx, const std::string& module_name);
-  [[nodiscard]] llvm::Module& module() const;
-  void emit_module(const sema::module& m);
-  // Transfer ownership of the underlying Module (for ORC JIT)
-  std::unique_ptr<llvm::Module> take_module();
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Value.h"
 
- private:
-  llvm::Function* emit_function(const sema::function& f);
-  void emit_block(const sema::block& b);
-  llvm::Value* emit_expr(const sema::expr& e);
-  void emit_stmt(const sema::stmt& s);
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Module.h>
+#include <memory>
+#include <unordered_map>
+#include <variant>
 
-  [[nodiscard]] llvm::Type* to_llvm_type(const type_ref& t) const;
-  [[nodiscard]] llvm::Constant* to_llvm_const(const value& v) const;
-  llvm::Value* emit_bin_op(const sema::bin_op& b);
-  llvm::Value* emit_unary(const sema::unary& u);
+class IrGenFromSema {
+  public:
+    IrGenFromSema(llvm::LLVMContext& ctx, const std::string& module_name);
+    [[nodiscard]] llvm::Module& module() const;
+    void emitModule(const sema::Module& module);
+    // Transfer ownership of the underlying Module (for ORC JIT)
+    std::unique_ptr<llvm::Module> takeModule();
 
- private:
-  void emit_entry_shim(const sema::module& m) const;
-  llvm::LLVMContext& ctx_;
-  std::unique_ptr<llvm::Module> mod_;
-  std::unique_ptr<llvm::IRBuilder<>> builder_;
-  std::vector<std::unordered_map<std::string, llvm::Value*>> vars_;
+  private:
+    struct RValue {
+        llvm::Value* val;
+    };
+    struct LValue {
+        llvm::AllocaInst* addr;
+    };
+    using Binding = std::variant<RValue, LValue>;
+
+    llvm::AllocaInst* createAllocaInEntry(llvm::Function* func, llvm::Type* type,
+                                          llvm::StringRef name);
+
+    llvm::Function* emitFunction(const sema::Function& func);
+    void emitBlock(const sema::Block& blk);
+    llvm::Value* emitExpr(const sema::Expr& expr);
+    void emitStmt(const sema::Stmt& stmt);
+
+    [[nodiscard]] llvm::Type* toLlvmType(const TypeRef& t_ref) const;
+    [[nodiscard]] llvm::Constant* toLlvmConst(const Value& val) const;
+    llvm::Value* emitBinOp(const sema::BinOp& bin_op);
+    llvm::Value* emitUnary(const sema::Unary& unary);
+
+    void emitEntryShim(const sema::Module& module) const;
+    llvm::LLVMContext& ctx_;
+    std::unique_ptr<llvm::Module> mod_;
+    std::unique_ptr<llvm::IRBuilder<>> builder_;
+    std::vector<std::unordered_map<std::string, Binding>> vars_;
 };

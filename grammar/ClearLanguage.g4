@@ -110,7 +110,8 @@ ifStmt
     ;
 
 varDecl
-    : IDENT COLON type (ASSIGN expr)? SEMI
+    : LET IDENT COLON type (ASSIGN expr)? SEMI #letStmtDecl
+    | VAR IDENT COLON type (ASSIGN expr)? SEMI #varStmtDecl
     ;
 
 constantDecl
@@ -122,25 +123,24 @@ constExpr
     ;
 
 constAddExpr
-    : constMulExpr ( (PLUS|MINUS) constMulExpr )*
+    : left=constMulExpr ( op+=(PLUS|MINUS) right+=constMulExpr )*
     ;
 
 constMulExpr
-    : constUnary (('*'|'/'|'%') constUnary )*
+    : left=constUnary (op+=('*'|'/'|'%') right+=constUnary )*
     ;
 
 constUnary
-    : '-' constUnary
-    | constPrimary
+    : '-' inner=constUnary #unaryConstMinus
+    | constPrimary          #unaryConstPrimary
     ;
 
 constPrimary
-    : INT
-    | FLOAT
-    | STRING
-    | TRUE
-    | FALSE
-    | '(' constExpr ')'
+    : INT #intConstLiteral
+    | FLOAT #floatConstLiteral
+    | STRING #stringConstLiteral
+    | (TRUE | FALSE) #boolConstLiteral
+    | '(' constExpr ')' #parenConstExpr
     ;
 
 argList
@@ -150,6 +150,8 @@ argList
 PACKAGE: 'package';
 IMPORT: 'import';
 CONSTANT: 'const';
+LET: 'let';
+VAR: 'var';
 IF: 'if';
 ELSE: 'else';
 FUNC: 'func';

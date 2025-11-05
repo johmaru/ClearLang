@@ -26,14 +26,17 @@
 - else |
 - import | package import
 - package | assign package
+- let | immutable variable
+- var | mutable variable
+- const | constant value
 
 Example
 
 ```
 [EntryPoint] func test() -> i64 {
 
-    x : i64 = -35;
-    y : i64 = 61; // comment can be
+    let x : i64 = -35;
+    let y : i64 = 61; // comment can be
 
     return x + y;
 }
@@ -44,8 +47,8 @@ f16 Example
 ```
 [EntryPoint]
 func test() -> f16 {
-    a: f16 = 50.5;
-    b: f16 = 30.0;
+    let a: f16 = 50.5;
+    let b: f16 = 30.0;
     return decrease(a, b);
 }
 
@@ -71,8 +74,8 @@ Unit Example
 ```
 [EntryPoint]
 func test() -> unit {
-    x : i64 = -35;
-    y : i64 = 61;
+    let x : i64 = -35;
+    let y : i64 = 61;
 
     return();
 }
@@ -87,8 +90,8 @@ as! Example
 ```
 [EntryPoint]
 func test() -> i16 {
-    a: i16 = 50;
-    b: string = "30";
+    let a: i16 = 50;
+    let b: string = "30";
     return decrease(a, b as! i16);
 }
 
@@ -107,10 +110,10 @@ if Example
 [EntryPoint]
 func test() -> () {
     a: u8 = 50;
-    b: string = "30";
-	c: bool = false;
-    e: u8 = if_test(a, b as! u8, c);
-	__cl_u8_printfn(e);
+    let b: string = "30";
+    let c: bool = false;
+    let e: u8 = if_test(a, b as! u8, c);
+    __cl_u8_printfn(e);
 }
 
 func if_test(a:u8, b:u8, c:bool) -> u8 {
@@ -156,10 +159,10 @@ Printf(string)
 
 ```
 func test() -> i16 {
-    a: i16 = 50;
-    b: i16 = 30;
-	c: string = "hello world!\n";
-	__cl_printf(c);
+    let a: i16 = 50;
+    let b: i16 = 30;
+    let c: string = "hello world!\n";
+    __cl_printf(c);
     return decrease(a, b);
 }
 ```

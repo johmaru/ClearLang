@@ -3,11 +3,11 @@ import test;
 
 [EntryPoint]
 func main() -> () {
-    a: u8 = 50;
-    b: string = "30";
-	c: bool = true;
-	d: f32 = 3.5;
-    e: u8 = test::if_test(a, b as! u8, c);
+    let a: u8 = 50;
+    let b: string = "30";
+	let c: bool = true;
+	let d: f32 = 3.5;
+    let e: u8 = test::if_test(a, b as! u8, c);
 	
 	__cl_u8_printfn(e);
 	__cl_f32_printfn(d);
