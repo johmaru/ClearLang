@@ -13,7 +13,7 @@ static std::atomic<int32_t> g_exit_code{0};
 
 #ifdef _WIN32
 #ifndef NOMINMAX
-#define NOMINMAX constexpr 1
+#define NOMINMAX 1
 #endif
 #include <windows.h>
 #define CL_API extern "C" __declspec(dllexport)
