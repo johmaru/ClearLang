@@ -182,7 +182,7 @@ static void emitObjectFile(llvm::Module& module, const std::string& obj_path) {
     std::string err;
     const llvm::Target* target = llvm::TargetRegistry::lookupTarget(TRIPLE, err);
     if (target == nullptr) {
-        throw std::runtime_error("lockupTarget failed: " + err);
+        throw std::runtime_error("lookupTarget failed: " + err);
     }
 
     llvm::TargetOptions opt;
