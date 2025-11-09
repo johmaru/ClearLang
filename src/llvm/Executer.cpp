@@ -1,6 +1,15 @@
 #include "Executer.h"
 
+#include "llvm/Support/Error.h"
+
 #include <antlr4-runtime.h>
+#include <iterator>
+#include <llvm/ExecutionEngine/Orc/EPCDynamicLibrarySearchGenerator.h>
+#include <string>
+#include <utility>
+#include <vector>
+
+using std::vector;
 
 int execute(const int argc, const char* argv[], ClearLanguageParser& parser) {
     parser.removeErrorListeners();
@@ -10,7 +19,7 @@ int execute(const int argc, const char* argv[], ClearLanguageParser& parser) {
     auto* tree = parser.start();
     if (parser.getNumberOfSyntaxErrors() > 0) {
         std::cerr << "syntax errors: " << parser.getNumberOfSyntaxErrors() << "\n";
-        return 2;
+        return static_cast<int>(executer::ExecResult::SYNTAX_ERROR);
     }
 
     SemaBuilder s_builder;
@@ -20,19 +29,23 @@ int execute(const int argc, const char* argv[], ClearLanguageParser& parser) {
     auto ctx = std::make_unique<llvm::LLVMContext>();
     IrGenFromSema ir(*ctx, "ClearModule");
     ir.emitModule(*MOD);
-    if (argc >= 2 && std::string(argv[1]) == "--emit-llvm") {
-        ir.module().print(llvm::outs(), nullptr);
-        return 0;
-    }
 
-    if (argc >= 2 && std::string(argv[1]) == "--debug-print") {
-        if (supportExecuteDebug(ir, ctx) != 0) {
-            return 3;
+    for (int idx = 1; idx < argc; ++idx) {
+        if (std::string(argv[idx]) == "--emit-llvm") {
+            ir.module().print(llvm::outs(), nullptr);
+            break;
+        }
+        if (std::string(argv[idx]) == "--debug-print") {
+            if (supportExecuteDebug(ir, ctx) != 0) {
+                return static_cast<int>(executer::ExecResult::EXECUTION_ERROR);
+            }
+            break;
         }
     }
-    return 0;
+    return static_cast<int>(executer::ExecResult::SUCCESS);
 }
 
+// NOLINTNEXTLINE(readability-identifier-length)
 int supportExecuteDebug(IrGenFromSema& ir, std::unique_ptr<llvm::LLVMContext>& ctx) {
     std::cout << "=== Executing ===" << '\n';
     llvm::InitializeNativeTarget();
@@ -48,12 +61,32 @@ int supportExecuteDebug(IrGenFromSema& ir, std::unique_ptr<llvm::LLVMContext>& c
     // llvm version gap
 #if defined(__APPLE__)
     constexpr char GLOBAL_PREFIX = '_';
-#else
-    constexpr char GLOBAL_PREFIX = '\0';
 #endif
 
-    jitdylib.addGenerator(llvm::cantFail(
-        llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(GLOBAL_PREFIX)));
+    jitdylib.addGenerator(
+        llvm::cantFail(llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
+            JIT->getExecutionSession(), nullptr)));
+
+#if defined(CLEAR_RUNTIME_LIB_DIR) && defined(CLEAR_RUNTIME_LIB_NAME)
+    {
+        std::string rt_lib =
+#if defined(_WIN32)
+            std::string(CLEAR_RUNTIME_LIB_DIR) + "\\" + std::string(CLEAR_RUNTIME_LIB_NAME);
+#else
+            std::string(CLEAR_RUNTIME_LIB_DIR) + "/" + std::string(CLEAR_RUNTIME_LIB_NAME);
+#endif
+
+        if (auto gen_or_err = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
+                JIT->getExecutionSession(), rt_lib.c_str(), nullptr)) {
+            jitdylib.addGenerator(std::move(*gen_or_err));
+        } else {
+            llvm::logAllUnhandledErrors(gen_or_err.takeError(), llvm::errs(),
+                                        "failed to load runtime lib: ");
+            return static_cast<int>(executer::ExecResult::RUNTIME_LIB_LOAD_ERROR);
+        }
+    }
+#endif
+
     llvm::cantFail(JIT->addIRModule(std::move(tsm)));
 
     const auto ADDR = llvm::cantFail(JIT->lookup("__cl_entry"));
@@ -86,10 +119,9 @@ int supportExecuteDebug(IrGenFromSema& ir, std::unique_ptr<llvm::LLVMContext>& c
             std::cout << val << "\n";
         }
         else if (tag == 6) {
-            uint16_t bits = static_cast<uint16_t>(buf[1]) | (static_cast<uint16_t>(buf[2]) << 8);
-            CLHalf half; half.bits = bits;
-            float float_val = static_cast<float>(half);
-            std::cout << float_val << "\n";
+            uint16_t bits = static_cast<uint16_t>(buf[1]) | (static_cast<uint16_t>(buf[2]) <<
+        8); CLHalf half; half.bits = bits; float float_val = static_cast<float>(half); std::cout
+        << float_val << "\n";
         }
         else {
             std::cout << "unsupported tag: " << static_cast<int>(tag)
@@ -105,5 +137,5 @@ int supportExecuteDebug(IrGenFromSema& ir, std::unique_ptr<llvm::LLVMContext>& c
         std::cout << "exit=" << EXIT_CODE() << "\n";
         return EXIT_CODE();
     }
-    return 0;
+    return static_cast<int>(executer::ExecResult::SUCCESS);
 }

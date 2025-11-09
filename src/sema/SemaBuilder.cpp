@@ -99,7 +99,7 @@ SemaBuilder::SemaBuilder() : mod_(std::make_shared<sema::Module>()) {
 
     // Signatures of built-in functions
 
-    add_builtin_function("_cl_printf", {Type::kind_enum::STRING}, Type::kind_enum::UNIT);
+    add_builtin_function("__cl_printf", {Type::kind_enum::STRING}, Type::kind_enum::UNIT);
 
     add_builtin_function("__cl_i8_printf", {Type::kind_enum::I8}, Type::kind_enum::UNIT);
 

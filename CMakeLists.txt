@@ -114,16 +114,25 @@ endif()
 set_source_files_properties(${ANTLR4_GENERATED_HEADERS} PROPERTIES GENERATED TRUE)
 target_sources(Clear PRIVATE ${ANTLR4_GENERATED_HEADERS})
 
-add_library(clear_runtime STATIC
+add_library(clear_runtime SHARED
     src/runtime/host_runtime.cpp
 )
 
-target_link_libraries(Clear PRIVATE clear_runtime)
+if (WIN32)
+    set_target_properties(clear_runtime PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
+add_dependencies(Clear clear_runtime)
 
 target_compile_definitions(Clear PRIVATE
     CLEAR_RUNTIME_LIB_DIR="$<TARGET_FILE_DIR:clear_runtime>"
     CLEAR_RUNTIME_LIB_NAME="$<TARGET_FILE_NAME:clear_runtime>"
 )
+
+target_compile_definitions(Clear PRIVATE
+     CLEAR_RUNTIME_IMPORT_LIB_DIR="$<TARGET_LINKER_FILE_DIR:clear_runtime>"
+     CLEAR_RUNTIME_IMPORT_LIB_NAME="$<TARGET_LINKER_FILE_NAME:clear_runtime>"
+ )
 
 target_compile_definitions(clear_runtime PRIVATE CLEAR_RUNTIME_OMIT_EXIT=1)
 
@@ -137,6 +146,13 @@ target_compile_definitions(Clear PRIVATE
     CLEAR_AOT_ENTRY_LIB_DIR="$<TARGET_FILE_DIR:clear_aot_entry>"
     CLEAR_AOT_ENTRY_LIB_NAME="$<TARGET_FILE_NAME:clear_aot_entry>"
 )
+
+if (MSVC)
+    foreach(tgt IN ITEMS Clear clear_runtime clear_aot_entry)
+        target_compile_definitions(${tgt} PRIVATE $<$<CONFIG:Debug>:_DEBUG>)
+        set_property(TARGET ${tgt} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+    endforeach()
+endif()
 
 if (CMAKE_EXPORT_COMPILE_COMMANDS)
   add_custom_target(copy_compile_commands ALL
