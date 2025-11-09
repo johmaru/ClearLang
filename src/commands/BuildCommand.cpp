@@ -5,6 +5,8 @@
 #include "ClearLanguageLexer.h"
 
 #include <antlr4-runtime.h>
+#include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <llvm/ADT/SmallVector.h>
@@ -34,7 +36,7 @@ bool link(llvm::ArrayRef<const char*>, llvm::raw_ostream&, llvm::raw_ostream&, b
 static void linkWithLld(const std::string& obj_path, const std::string& out_path,
                         const bool AS_DLL) {
 #if defined(_WIN32)
-    llvm::SmallVector<const char*, 16> argv;
+    llvm::SmallVector<const char*, 32> argv;
     std::vector<std::string> storage;
     auto add = [&](std::string s) -> const char* {
         storage.push_back(std::move(s));
@@ -44,33 +46,95 @@ static void linkWithLld(const std::string& obj_path, const std::string& out_path
     argv.push_back("lld-link");
     argv.push_back("/nologo");
     argv.push_back(add("/out:" + out_path));
+    argv.push_back("/machine:x64");
     if (AS_DLL) {
         argv.push_back("/dll");
     } else {
         argv.push_back("/subsystem:console");
     }
 
-#ifdef CLEAR_RUNTIME_LIB_DIR
-#ifdef CLEAR_RUNTIME_LIB_NAME
-    const std::string RTLIB = std::string(CLEAR_RUNTIME_LIB_DIR) + "/" + CLEAR_RUNTIME_LIB_NAME;
-    argv.push_back(add(RTLIB));
+    if (const char* lib_env = std::getenv("LIB")) {
+        std::string lib_str = lib_env;
+        size_t pos = 0;
+        while (pos <= lib_str.size()) {
+            size_t next = lib_str.find(';', pos);
+            std::string path = lib_str.substr(pos, next == std::string::npos ? next : next - pos);
+            if (!path.empty()) {
+                argv.push_back(add("/libpath:" + path));
+            }
+            if (next == std::string::npos) {
+                break;
+            }
+            pos = next + 1;
+        }
+    }
+
+    if (const char* vctools = std::getenv("VCToolsInstallDir")) {
+        argv.push_back(add(std::string("/libpath:") + vctools + std::string("lib\\x64")));
+    }
+    if (const char* sdk_dir = std::getenv("WindowsSdkDir")) {
+        if (const char* sdk_lib_ver = std::getenv("WindowsSDKLibVersion")) {
+            argv.push_back(add(std::string("/libpath:") + sdk_dir + std::string("Lib\\") +
+                               sdk_lib_ver + "ucrt\\x64"));
+            argv.push_back(add(std::string("/libpath:") + sdk_dir + std::string("Lib\\") +
+                               sdk_lib_ver + "um\\x64"));
+        }
+    }
+
+#if defined(CLEAR_RUNTIME_IMPORT_LIB_DIR) && defined(CLEAR_RUNTIME_IMPORT_LIB_NAME)
+    {
+        std::string rtlib =
+#ifdef _WIN32
+            std::string(CLEAR_RUNTIME_IMPORT_LIB_DIR) + "\\" +
+            std::string(CLEAR_RUNTIME_IMPORT_LIB_NAME);
+#else
+            std::string(CLEAR_RUNTIME_IMPORT_LIB_DIR) + "/" +
+            std::string(CLEAR_RUNTIME_IMPORT_LIB_NAME);
 #endif
+        argv.push_back(add(rtlib));
+    }
 #endif
 
-#ifdef CLEAR_AOT_ENTRY_LIB_DIR
-#ifdef CLEAR_AOT_ENTRY_LIB_NAME
-    const std::string ENTRYLIB =
-        std::string(CLEAR_AOT_ENTRY_LIB_DIR) + "/" + CLEAR_AOT_ENTRY_LIB_NAME;
-    argv.push_back(add(ENTRYLIB));
+#if defined(CLEAR_AOT_ENTRY_LIB_DIR) && defined(CLEAR_AOT_ENTRY_LIB_NAME)
+    {
+        std::string aotlib =
+#ifdef _WIN32
+            std::string(CLEAR_AOT_ENTRY_LIB_DIR) + "\\" + std::string(CLEAR_AOT_ENTRY_LIB_NAME);
+#else
+            std::string(CLEAR_AOT_ENTRY_LIB_DIR) + "/" + std::string(CLEAR_AOT_ENTRY_LIB_NAME);
 #endif
+        argv.push_back(add(aotlib));
+    }
 #endif
 
     argv.push_back(add(obj_path));
 
-    const lld::DriverDef DRIVERS_ARR[] = {{lld::Flavor::WinLink, &lld::coff::link}};
-    const auto DRIVERS = llvm::ArrayRef<lld::DriverDef>(DRIVERS_ARR, 1);
+#if defined(_DEBUG)
+    argv.push_back("msvcrtd.lib");    // mainCRTStartup 等
+    argv.push_back("vcruntimed.lib"); // _calloc_dbg 等
+    argv.push_back("ucrtd.lib");
+    argv.push_back("msvcprtd.lib"); // C++ STL debug
+#else
+    argv.push_back("msvcrt.lib");
+    argv.push_back("vcruntime.lib");
+    argv.push_back("ucrt.lib");
+    argv.push_back("msvcprt.lib");
+#endif
+    argv.push_back("legacy_stdio_definitions.lib");
+    argv.push_back("oldnames.lib");
+    argv.push_back("kernel32.lib");
+    argv.push_back("advapi32.lib");
+    argv.push_back("user32.lib");
 
-    auto result = lld::lldMain(argv, llvm::outs(), llvm::errs(), DRIVERS);
+    if (std::getenv("CLEAR_LLD_DUMP") != nullptr) {
+        llvm::errs() << "[lld-link args]\n";
+        for (const auto* arg : argv) {
+            llvm::errs() << "  " << arg << "\n";
+        }
+    }
+
+    const lld::DriverDef drivers[] = {{lld::Flavor::WinLink, &lld::coff::link}};
+    auto result = lld::lldMain(argv, llvm::outs(), llvm::errs(), llvm::ArrayRef(drivers, 1));
     if (result.retCode != 0) {
         throw std::runtime_error("lld::lldMain (COFF) failed");
     }
@@ -286,9 +350,19 @@ void BuildCommand::executeBuild(bool debug) const {
     const fs::path OBJ_PATH = OUT_DIR / (BASE + ".obj");
     const bool AS_DLL = (kind_ == build_kind::DLL);
     const fs::path OUT_PATH = OUT_DIR / (BASE + (AS_DLL ? ".dll" : ".exe"));
+    const fs::path IR_PATH = OUT_DIR / (BASE + ".ll");
 
     {
         auto& m = ir.module();
+        {
+            std::error_code ec;
+            llvm::raw_fd_ostream ir_out(IR_PATH.string(), ec, llvm::sys::fs::OF_Text);
+            if (!ec) {
+                m.print(ir_out, nullptr);
+            } else {
+                llvm::errs() << "failed to write IR file: " << ec.message() << "\n";
+            }
+        }
         emitObjectFile(m, OBJ_PATH.string());
     }
 
