@@ -18,6 +18,8 @@ class SemaBuilder : public ClearLanguageBaseVisitor {
     std::any visitUnaryMinus(ClearLanguageParser::UnaryMinusContext* ctx) override;
     std::any visitUnaryPrimary(ClearLanguageParser::UnaryPrimaryContext* ctx) override;
     std::any visitPostfixExpr(ClearLanguageParser::PostfixExprContext* ctx) override;
+    std::any visitUnaryRef(ClearLanguageParser::UnaryRefContext* ctx) override;
+    std::any visitUnaryDeref(ClearLanguageParser::UnaryDerefContext* ctx) override;
     std::any visitParenExpr(ClearLanguageParser::ParenExprContext* ctx) override;
     std::any visitUnitLiteral(ClearLanguageParser::UnitLiteralContext* ctx) override;
     std::any visitOrExpr(ClearLanguageParser::OrExprContext* ctx) override;
@@ -131,6 +133,8 @@ class SemaBuilder : public ClearLanguageBaseVisitor {
     [[nodiscard]] std::string resolveFunctionName(const std::string& name) const;
     [[nodiscard]] const SymbolEntry* lookupFunctionSymbol(const std::string& name) const;
     [[nodiscard]] TypeRef resolveTypeSymbol(const std::string& name) const;
+    [[nodiscard]] bool isAddressable(const std::shared_ptr<sema::Expr>& expr) noexcept;
+    [[nodiscard]] bool inferMutability(const std::shared_ptr<sema::Expr>& expr);
 
     bool tryFoldExpr(const std::shared_ptr<sema::Expr>& expr, value_variant& out) const;
 

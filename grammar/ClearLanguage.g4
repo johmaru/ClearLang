@@ -38,7 +38,9 @@ mulExpr
 
 unaryExpr
     : '-' inner=unaryExpr        #unaryMinus
-    | postfixExpr                    #unaryPrimary
+    | '&' inner=unaryExpr        #unaryRef
+    | '*' inner=unaryExpr        #unaryDeref
+    | postfixExpr                #unaryPrimary
     ;
 
 postfixExpr

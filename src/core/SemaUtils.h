@@ -1,6 +1,8 @@
 #pragma once
+#include "../sema/SemaIR.h"
 #include "CLType.h"
 
+#include <memory>
 #include <variant>
 
 namespace sema_utils {
@@ -50,6 +52,34 @@ inline Value coerceUntypedIntTo(const Value& in_val, const TypeRef& target) {
         throw std::runtime_error(msg);
     }
     return out;
+}
+
+static bool tryCoerceUntypedIntExprTo(std::shared_ptr<sema::Expr>& expr, const TypeRef& target) {
+    if (!isIntegral(target)) {
+        return false;
+    }
+    auto lit = std::dynamic_pointer_cast<sema::Literal>(expr);
+    if (!lit) {
+        return false;
+    }
+    if (!lit->value.is_untyped_int) {
+        return false;
+    }
+
+    try {
+        Value coerced = coerceUntypedIntTo(lit->value, target);
+        lit->value = std::move(coerced);
+        lit->type = target;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+static void normalizeBinaryNumbers(std::shared_ptr<sema::Expr>& lhs,
+                                   std::shared_ptr<sema::Expr>& rhs) {
+    (void) tryCoerceUntypedIntExprTo(lhs, rhs->type);
+    (void) tryCoerceUntypedIntExprTo(rhs, lhs->type);
 }
 
 } // namespace sema_utils
