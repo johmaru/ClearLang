@@ -49,6 +49,50 @@ struct Type {
     };
     kind_enum kind;
 
+    static bool isIntKind(const Type::kind_enum KIND) {
+        switch (KIND) {
+        case Type::kind_enum::I8:
+        case Type::kind_enum::U8:
+        case Type::kind_enum::I16:
+        case Type::kind_enum::U16:
+        case Type::kind_enum::I32:
+        case Type::kind_enum::U32:
+        case Type::kind_enum::I64:
+        case Type::kind_enum::U64:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    static bool isNumKind(const Type::kind_enum KIND) {
+        switch (KIND) {
+        case Type::kind_enum::I8:
+        case Type::kind_enum::U8:
+        case Type::kind_enum::I16:
+        case Type::kind_enum::U16:
+        case Type::kind_enum::I32:
+        case Type::kind_enum::U32:
+        case Type::kind_enum::I64:
+        case Type::kind_enum::U64:
+        case Type::kind_enum::F16:
+        case Type::kind_enum::F32:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    static bool isBoolKind(const Type::kind_enum KIND) {
+        switch (KIND) {
+        case Type::kind_enum::BOOLEAN:
+            return true;
+
+        default:
+            return false;
+        }
+    }
+
     [[nodiscard]] bool isUnsigned() const {
         return kind == kind_enum::U8 || kind == kind_enum::U16 || kind == kind_enum::U32 ||
                kind == kind_enum::U64;
@@ -171,16 +215,22 @@ struct Type {
 struct FunctionSig;
 
 struct TypeRef {
-    enum class tag : std::uint8_t { BUILTIN, FUNCTION } tag = tag::BUILTIN;
+    enum class tag : std::uint8_t { BUILTIN, FUNCTION, POINTER } tag = tag::BUILTIN;
 
     Type builtin{Type::kind_enum::I32}; // default
 
     std::shared_ptr<FunctionSig> func_sig;
 
-    static TypeRef builtinType(const Type type) {
+    struct PointerInfo {
+        std::shared_ptr<TypeRef> pointee_type;
+        bool is_mutable{false};
+    };
+    std::shared_ptr<PointerInfo> ptr;
+
+    static TypeRef builtinType(const Type TYPE) {
         TypeRef t_ref;
         t_ref.tag = tag::BUILTIN;
-        t_ref.builtin = type;
+        t_ref.builtin = TYPE;
         t_ref.func_sig.reset();
         return t_ref;
     }
@@ -192,15 +242,40 @@ struct TypeRef {
         return t_ref;
     }
 
+    static TypeRef pointerType(const TypeRef& pointee_type, const bool IS_MUTABLE) {
+        TypeRef t_ref;
+        t_ref.tag = tag::POINTER;
+        t_ref.func_sig.reset();
+        t_ref.ptr = std::make_shared<PointerInfo>(
+            PointerInfo{std::make_shared<TypeRef>(pointee_type), IS_MUTABLE});
+        return t_ref;
+    }
+
     static bool isUnsigned(const TypeRef& t_ref) {
         return t_ref.isBuiltin() && t_ref.builtin.isUnsigned();
     }
 
+    [[nodiscard]] bool isPointer() const {
+        return tag == tag::POINTER;
+    }
     [[nodiscard]] bool isBuiltin() const {
         return tag == tag::BUILTIN;
     }
     [[nodiscard]] bool isFunction() const {
         return tag == tag::FUNCTION;
+    }
+
+    [[nodiscard]] const TypeRef& pointee() const {
+        if (!isPointer()) {
+            throw std::runtime_error("not a pointer type");
+        }
+        return *ptr->pointee_type;
+    }
+    [[nodiscard]] bool isPointeeMutable() const {
+        if (!isPointer()) {
+            throw std::runtime_error("not a pointer type");
+        }
+        return ptr->is_mutable;
     }
 };
 
@@ -281,10 +356,19 @@ inline const char* builtinTypeName(const Type& type) {
     return "?";
 }
 
+inline bool isIntegral(const TypeRef& type_ref) {
+    return type_ref.isBuiltin() && Type::isIntKind(type_ref.builtin.kind);
+}
+
 inline std::string typeName(const TypeRef& t_ref) {
     if (t_ref.isBuiltin()) {
         return builtinTypeName(t_ref.builtin);
     }
+    if (t_ref.isPointer()) {
+        return std::string(t_ref.isPointeeMutable() ? "*mut " : "*const ") +
+               typeName(t_ref.pointee());
+    }
+
     // "(T1, T2) -> R"
     std::ostringstream oss;
     oss << "(";

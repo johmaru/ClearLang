@@ -42,6 +42,10 @@ struct Literal : Expr {
 
 struct VarRef : Expr {
     std::string name;
+    sema::mutability mut{sema::mutability::CONST};
+    [[nodiscard]] bool isMutable() const {
+        return mut == sema::mutability::VAR;
+    }
 };
 
 struct Cast : Expr {
@@ -61,8 +65,13 @@ struct BinOp : Expr {
     }
 };
 
+enum class UnaryOpKind : std::uint8_t {
+    REF,
+    DEREF,
+    NEGATE,
+};
 struct Unary : Expr {
-    std::string op;
+    UnaryOpKind op;
     std::shared_ptr<Expr> inner;
     [[nodiscard]] bool isConst() const override {
         return inner && inner->isConst();

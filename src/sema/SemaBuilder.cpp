@@ -29,54 +29,41 @@ using sema::Call;
 using sema::Cast;
 
 namespace {
-bool isIntKind(const Type::kind_enum KIND) {
-    switch (KIND) {
-    case Type::kind_enum::I8:
-    case Type::kind_enum::U8:
-    case Type::kind_enum::I16:
-    case Type::kind_enum::U16:
-    case Type::kind_enum::I32:
-    case Type::kind_enum::U32:
-    case Type::kind_enum::I64:
-    case Type::kind_enum::U64:
-        return true;
-    default:
-        return false;
-    }
-}
-
-bool isBoolKind(const Type::kind_enum KIND) {
-    switch (KIND) {
-    case Type::kind_enum::BOOLEAN:
-        return true;
-
-    default:
-        return false;
-    }
-}
-
-bool isNumKind(const Type::kind_enum KIND) {
-    switch (KIND) {
-    case Type::kind_enum::I8:
-    case Type::kind_enum::U8:
-    case Type::kind_enum::I16:
-    case Type::kind_enum::U16:
-    case Type::kind_enum::I32:
-    case Type::kind_enum::U32:
-    case Type::kind_enum::I64:
-    case Type::kind_enum::U64:
-    case Type::kind_enum::F16:
-    case Type::kind_enum::F32:
-        return true;
-    default:
-        return false;
-    }
-}
 
 TypeRef booleanType() {
     return TypeRef::builtinType(Type{Type::kind_enum::BOOLEAN});
 }
+
+[[nodiscard]] bool isAddressable(const std::shared_ptr<sema::Expr>& expr) noexcept {
+    if (std::dynamic_pointer_cast<VarRef>(expr)) {
+        return true;
+    }
+    if (auto unary = std::dynamic_pointer_cast<Unary>(expr)) {
+        return unary->op == sema::UnaryOpKind::DEREF;
+    }
+    return false;
+}
+[[nodiscard]] bool inferMutability(const std::shared_ptr<Expr>& expr) {
+    if (auto var = std::dynamic_pointer_cast<VarRef>(expr)) {
+        return var->mut == sema::mutability::VAR;
+    }
+    if (auto unary = std::dynamic_pointer_cast<Unary>(expr)) {
+        if (unary->op == sema::UnaryOpKind::DEREF && unary->type.isPointer()) {
+            return unary->type.isPointeeMutable();
+        }
+    }
+    return false;
+}
+
 } // namespace
+
+bool SemaBuilder::isAddressable(const std::shared_ptr<sema::Expr>& expr) noexcept {
+    return ::isAddressable(expr);
+}
+
+bool SemaBuilder::inferMutability(const std::shared_ptr<sema::Expr>& expr) {
+    return ::inferMutability(expr);
+}
 
 SemaBuilder::SemaBuilder() : mod_(std::make_shared<sema::Module>()) {
     pushScope(scope_kind::GLOBAL);
@@ -209,7 +196,7 @@ bool SemaBuilder::tryFoldExpr(const std::shared_ptr<sema::Expr>& exprPtr,
         if (!tryFoldExpr(un_v->inner, inner)) {
             return false;
         }
-        if (un_v->op == "-") {
+        if (un_v->op == sema::UnaryOpKind::NEGATE) {
             if (auto* pi_v = std::get_if<int64_t>(&inner)) {
                 out = -(*pi_v);
                 return true;
@@ -568,10 +555,36 @@ std::any SemaBuilder::visitUnaryMinus(ClearLanguageParser::UnaryMinusContext* ct
     const auto INNER = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->inner));
 
     const auto NODE = std::make_shared<Unary>();
-    NODE->op = "-";
+    NODE->op = sema::UnaryOpKind::NEGATE;
     NODE->inner = INNER;
     NODE->type = INNER->type;
     return std::static_pointer_cast<Expr>(NODE);
+}
+
+std::any SemaBuilder::visitUnaryRef(ClearLanguageParser::UnaryRefContext* ctx) {
+    const auto INNER = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->inner));
+    if (!isAddressable(INNER)) {
+        throw std::runtime_error("cannot take address of rvalue");
+    }
+    auto node = std::make_shared<Unary>();
+    node->op = sema::UnaryOpKind::REF;
+    node->inner = INNER;
+
+    bool pointee_mut = inferMutability(INNER);
+    node->type = TypeRef::pointerType(INNER->type, pointee_mut);
+    return std::static_pointer_cast<Expr>(node);
+}
+
+std::any SemaBuilder::visitUnaryDeref(ClearLanguageParser::UnaryDerefContext* ctx) {
+    const auto INNER = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->inner));
+    if (!INNER->type.isPointer()) {
+        throw std::runtime_error("cannot dereference non-pointer type");
+    }
+    auto node = std::make_shared<Unary>();
+    node->op = sema::UnaryOpKind::DEREF;
+    node->inner = INNER;
+    node->type = INNER->type.pointee();
+    return std::static_pointer_cast<Expr>(node);
 }
 
 std::any SemaBuilder::visitOrExpr(ClearLanguageParser::OrExprContext* ctx) {
@@ -581,13 +594,13 @@ std::any SemaBuilder::visitOrExpr(ClearLanguageParser::OrExprContext* ctx) {
         return cur;
     }
 
-    if (!(cur->type.isBuiltin() && isIntKind(cur->type.builtin.kind))) {
+    if (!(cur->type.isBuiltin() && Type::isIntKind(cur->type.builtin.kind))) {
         throw std::runtime_error("operator 'or' expects integer operands (left)");
     }
 
     for (auto& aec : ctx->right) {
         const auto RHS = std::any_cast<std::shared_ptr<Expr>>(visit(aec));
-        if (!(RHS->type.isBuiltin() && isIntKind(RHS->type.builtin.kind))) {
+        if (!(RHS->type.isBuiltin() && Type::isIntKind(RHS->type.builtin.kind))) {
             throw std::runtime_error("operator or expects integer operands (right)");
         }
 
@@ -608,13 +621,13 @@ std::any SemaBuilder::visitAndExpr(ClearLanguageParser::AndExprContext* ctx) {
         return cur;
     }
 
-    if (!(cur->type.isBuiltin() && isIntKind(cur->type.builtin.kind))) {
+    if (!(cur->type.isBuiltin() && Type::isIntKind(cur->type.builtin.kind))) {
         throw std::runtime_error("operator 'and' expects integer operands (left)");
     }
 
     for (auto& eec : ctx->right) {
         const auto RHS = std::any_cast<std::shared_ptr<Expr>>(visit(eec));
-        if (!(RHS->type.isBuiltin() && isIntKind(RHS->type.builtin.kind))) {
+        if (!(RHS->type.isBuiltin() && Type::isIntKind(RHS->type.builtin.kind))) {
             throw std::runtime_error("operator 'and' expects integer operands (right)");
         }
 
@@ -640,7 +653,7 @@ std::any SemaBuilder::visitEqualExpr(ClearLanguageParser::EqualExprContext* ctx)
         const auto L_K = cur->type.builtin.kind;
         const auto R_K = RHS->type.builtin.kind;
 
-        if (!isNumKind(L_K) || L_K != R_K) {
+        if (!Type::isNumKind(L_K) || L_K != R_K) {
             throw std::runtime_error("type mismatch in equal op (only num same types)");
         }
 
@@ -657,13 +670,16 @@ std::any SemaBuilder::visitEqualExpr(ClearLanguageParser::EqualExprContext* ctx)
 std::any SemaBuilder::visitAddExpr(ClearLanguageParser::AddExprContext* ctx) {
     auto cur = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->left));
     for (size_t i = 0; i < ctx->right.size(); ++i) {
-        const auto RHS = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->right[i]));
+        auto rhs = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->right[i]));
         std::string oper = ctx->op[i]->getText();
-        if (!cur->type.isBuiltin() || !RHS->type.isBuiltin() ||
-            cur->type.builtin.kind != RHS->type.builtin.kind) {
+
+        sema_utils::normalizeBinaryNumbers(cur, rhs);
+
+        if (!cur->type.isBuiltin() || !rhs->type.isBuiltin() ||
+            cur->type.builtin.kind != rhs->type.builtin.kind) {
             throw std::runtime_error("type mismatch in binary op");
         }
-        if (isString(cur->type) && isString(RHS->type)) {
+        if (isString(cur->type) && isString(rhs->type)) {
             if (oper != "+") {
                 throw std::runtime_error("only + operator is supported for string concatenation");
             }
@@ -671,7 +687,7 @@ std::any SemaBuilder::visitAddExpr(ClearLanguageParser::AddExprContext* ctx) {
         const auto BIN = std::make_shared<BinOp>();
         BIN->op = oper;
         BIN->lhs = cur;
-        BIN->rhs = RHS;
+        BIN->rhs = rhs;
         BIN->type = cur->type;
         cur = BIN;
     }
@@ -681,22 +697,25 @@ std::any SemaBuilder::visitAddExpr(ClearLanguageParser::AddExprContext* ctx) {
 std::any SemaBuilder::visitMulExpr(ClearLanguageParser::MulExprContext* ctx) {
     auto cur = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->left));
     for (size_t i = 0; i < ctx->right.size(); ++i) {
-        const auto RHS = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->right[i]));
+        auto rhs = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->right[i]));
         const std::string OPER = ctx->op[i]->getText();
-        if (!cur->type.isBuiltin() || !RHS->type.isBuiltin() ||
-            cur->type.builtin.kind != RHS->type.builtin.kind) {
+
+        sema_utils::normalizeBinaryNumbers(cur, rhs);
+
+        if (!cur->type.isBuiltin() || !rhs->type.isBuiltin() ||
+            cur->type.builtin.kind != rhs->type.builtin.kind) {
             throw std::runtime_error("type mismatch in binary op");
         }
 
-        if ((cur->type.isBuiltin() && !isNumKind(cur->type.builtin.kind)) ||
-            (RHS->type.isBuiltin() && !isNumKind(RHS->type.builtin.kind))) {
+        if ((cur->type.isBuiltin() && !Type::isNumKind(cur->type.builtin.kind)) ||
+            (rhs->type.isBuiltin() && !Type::isNumKind(rhs->type.builtin.kind))) {
             throw std::runtime_error("operator " + OPER + " requires numeric operand types");
         }
 
         const auto BIN = std::make_shared<BinOp>();
         BIN->op = OPER;
         BIN->lhs = cur;
-        BIN->rhs = RHS;
+        BIN->rhs = rhs;
         BIN->type = cur->type;
         cur = BIN;
     }
@@ -729,6 +748,7 @@ std::any SemaBuilder::visitVarRef(ClearLanguageParser::VarRefContext* ctx) {
             auto v_ref = std::make_shared<VarRef>();
             v_ref->name = name;
             v_ref->type = sym_entry->type;
+            v_ref->mut = sym_entry->mut;
             return std::static_pointer_cast<Expr>(v_ref);
         }
         case symbol_kind::FUNCTION: {
@@ -813,8 +833,8 @@ std::any SemaBuilder::visitBlock(ClearLanguageParser::BlockContext* ctx) {
 std::any SemaBuilder::visitIfBlock(ClearLanguageParser::IfBlockContext* ctx) {
     const auto COND = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->expr()));
 
-    const bool IS_BOOL = COND->type.isBuiltin() && isBoolKind(COND->type.builtin.kind);
-    const bool IS_INT = COND->type.isBuiltin() && isIntKind(COND->type.builtin.kind);
+    const bool IS_BOOL = COND->type.isBuiltin() && Type::isBoolKind(COND->type.builtin.kind);
+    const bool IS_INT = COND->type.isBuiltin() && Type::isIntKind(COND->type.builtin.kind);
 
     if (!(IS_BOOL || IS_INT)) {
         throw std::runtime_error("if condition must be boolean or int expression");
@@ -859,8 +879,8 @@ std::any SemaBuilder::visitIfBlock(ClearLanguageParser::IfBlockContext* ctx) {
 std::any SemaBuilder::visitIfSingle(ClearLanguageParser::IfSingleContext* ctx) {
     const auto COND = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->expr()));
 
-    const bool IS_BOOL = COND->type.isBuiltin() && isBoolKind(COND->type.builtin.kind);
-    const bool IS_INT = COND->type.isBuiltin() && isIntKind(COND->type.builtin.kind);
+    const bool IS_BOOL = COND->type.isBuiltin() && Type::isBoolKind(COND->type.builtin.kind);
+    const bool IS_INT = COND->type.isBuiltin() && Type::isIntKind(COND->type.builtin.kind);
 
     if (!(IS_BOOL || IS_INT)) {
         throw std::runtime_error("if condition must be boolean or int expression");
@@ -954,7 +974,7 @@ std::any SemaBuilder::visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext* 
     node->name = name;
     node->decl_type = decl_ty;
 
-    auto toSemaMut = [](sema::mutability mut) -> sema::mutability {
+    auto to_sema_mut = [](sema::mutability mut) -> sema::mutability {
         switch (mut) {
         case sema::mutability::CONST:
             return sema::mutability::CONST;
@@ -965,7 +985,7 @@ std::any SemaBuilder::visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext* 
         }
         return sema::mutability::CONST;
     };
-    node->mut = toSemaMut(mut);
+    node->mut = to_sema_mut(mut);
 
     if (init_expr) {
         if (init_expr->type.isBuiltin() && init_expr->type.builtin.kind == Type::kind_enum::I32) {
@@ -1060,7 +1080,7 @@ std::any SemaBuilder::visitConstMulExpr(ClearLanguageParser::ConstMulExprContext
             throw std::runtime_error("type mismatch in binary op");
         }
 
-        if (!isNumKind(cur->type.builtin.kind) || !isNumKind(RHS->type.builtin.kind)) {
+        if (!Type::isNumKind(cur->type.builtin.kind) || !Type::isNumKind(RHS->type.builtin.kind)) {
             throw std::runtime_error("operator " + OPER + " requires numeric operand types");
         }
 
@@ -1078,7 +1098,7 @@ std::any SemaBuilder::visitUnaryConstMinus(ClearLanguageParser::UnaryConstMinusC
     const auto INNER = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->inner));
 
     const auto NODE = std::make_shared<Unary>();
-    NODE->op = "-";
+    NODE->op = sema::UnaryOpKind::NEGATE;
     NODE->inner = INNER;
     NODE->type = INNER->type;
     return std::static_pointer_cast<Expr>(NODE);
@@ -1220,19 +1240,19 @@ std::any SemaBuilder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext* 
             }
 
             bool ok_b = false;
-            if (isIntKind(SRC_K) && isIntKind(DST_K)) {
+            if (Type::isIntKind(SRC_K) && Type::isIntKind(DST_K)) {
                 ok_b = true;
             }
-            if (isIntKind(SRC_K) && DST_K == Type::kind_enum::F16) {
+            if (Type::isIntKind(SRC_K) && DST_K == Type::kind_enum::F16) {
                 ok_b = true;
             }
-            if (isIntKind(SRC_K) && DST_K == Type::kind_enum::F32) {
+            if (Type::isIntKind(SRC_K) && DST_K == Type::kind_enum::F32) {
                 ok_b = true;
             }
-            if (SRC_K == Type::kind_enum::F16 && isIntKind(DST_K)) {
+            if (SRC_K == Type::kind_enum::F16 && Type::isIntKind(DST_K)) {
                 ok_b = true;
             }
-            if (SRC_K == Type::kind_enum::F32 && isIntKind(DST_K)) {
+            if (SRC_K == Type::kind_enum::F32 && Type::isIntKind(DST_K)) {
                 ok_b = true;
             }
 
@@ -1275,7 +1295,7 @@ std::any SemaBuilder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext* 
                 continue;
             }
 
-            if (SRC_K == Type::kind_enum::STRING && isIntKind(DST_K)) {
+            if (SRC_K == Type::kind_enum::STRING && Type::isIntKind(DST_K)) {
                 if (const auto LIT = std::dynamic_pointer_cast<Literal>(cur)) {
                     if (std::holds_alternative<std::string>(LIT->value.v)) {
                         const std::string& str = std::get<std::string>(LIT->value.v);
@@ -1334,19 +1354,19 @@ std::any SemaBuilder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext* 
             }
 
             bool ok_b = false;
-            if (isIntKind(SRC_K) && isIntKind(DST_K)) {
+            if (Type::isIntKind(SRC_K) && Type::isIntKind(DST_K)) {
                 ok_b = true;
             }
-            if (isIntKind(SRC_K) && DST_K == Type::kind_enum::F16) {
+            if (Type::isIntKind(SRC_K) && DST_K == Type::kind_enum::F16) {
                 ok_b = true;
             }
-            if (isIntKind(SRC_K) && DST_K == Type::kind_enum::F32) {
+            if (Type::isIntKind(SRC_K) && DST_K == Type::kind_enum::F32) {
                 ok_b = true;
             }
-            if (SRC_K == Type::kind_enum::F16 && isIntKind(DST_K)) {
+            if (SRC_K == Type::kind_enum::F16 && Type::isIntKind(DST_K)) {
                 ok_b = true;
             }
-            if (SRC_K == Type::kind_enum::F32 && isIntKind(DST_K)) {
+            if (SRC_K == Type::kind_enum::F32 && Type::isIntKind(DST_K)) {
                 ok_b = true;
             }
 

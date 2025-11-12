@@ -11,6 +11,7 @@
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/Verifier.h>
+#include <string>
 
 IrGenFromSema::IrGenFromSema(llvm::LLVMContext& ctx, const std::string& module_name)
     : ctx_(ctx), mod_(std::make_unique<llvm::Module>(module_name, ctx_)),
@@ -197,7 +198,11 @@ llvm::Function* IrGenFromSema::emitFunction(const sema::Function& f) {
     vars_.emplace_back();
     idx = 0;
     for (auto& arg : func->args()) {
-        vars_.back()[std::string(arg.getName())] = RValue{&arg};
+        llvm::Type* arg_ty = arg.getType();
+        llvm::Function* parent_func = builder_->GetInsertBlock()->getParent();
+        auto* addr = createAllocaInEntry(parent_func, arg_ty, arg.getName());
+        builder_->CreateStore(&arg, addr);
+        vars_.back()[std::string(arg.getName())] = LValue{addr};
         ++idx;
     }
     emitBlock(*f.body);
@@ -231,12 +236,21 @@ void IrGenFromSema::emitStmt(const sema::Stmt& stmt) {
             stmt_var_decl->init_expr ? emitExpr(*stmt_var_decl->init_expr) : nullptr;
 
         switch (stmt_var_decl->mut) {
-        case sema::mutability::CONST:
-        case sema::mutability::LET: {
+        case sema::mutability::CONST: {
             if (init == nullptr) {
                 init = llvm::UndefValue::get(type);
             }
             vars_.back()[stmt_var_decl->name] = RValue{init};
+            break;
+        }
+        case sema::mutability::LET: {
+            llvm::Function* func = builder_->GetInsertBlock()->getParent();
+            auto* addr = createAllocaInEntry(func, type, stmt_var_decl->name);
+            if (init == nullptr) {
+                init = llvm::UndefValue::get(type);
+            }
+            builder_->CreateStore(init, addr);
+            vars_.back()[stmt_var_decl->name] = LValue{addr};
             break;
         }
         case sema::mutability::VAR: {
@@ -470,17 +484,50 @@ llvm::Value* IrGenFromSema::emitExpr(const sema::Expr& expr) {
 }
 
 llvm::Value* IrGenFromSema::emitUnary(const sema::Unary& unary) {
-    auto* val = emitExpr(*unary.inner);
-    if (unary.op == "-") {
-        if (val->getType()->isIntegerTy()) {
-            return builder_->CreateNeg(val);
+    using K = sema::UnaryOpKind;
+    switch (unary.op) {
+    case K::NEGATE: {
+        llvm::Value* inner = emitExpr(*unary.inner);
+        if (inner->getType()->isIntegerTy()) {
+            return builder_->CreateNeg(inner);
         }
-        if (val->getType()->isHalfTy() || val->getType()->isFloatTy()) {
-            llvm::Value* zero = llvm::ConstantFP::get(val->getType(), 0.0);
-            return builder_->CreateFSub(zero, val);
+        if (inner->getType()->isHalfTy() || inner->getType()->isFloatTy()) {
+            llvm::Value* zero = llvm::ConstantFP::get(inner->getType(), 0.0);
+            return builder_->CreateFSub(zero, inner);
         }
+        break;
     }
-    throw std::runtime_error("emitUnary: unsupported op/type");
+    case K::REF: {
+        // &(*expr) == expr
+        if (const auto* una = dynamic_cast<sema::Unary*>(unary.inner.get())) {
+            if (una->op == K::DEREF) {
+                return emitExpr(*una->inner);
+            }
+        }
+
+        if (const auto* v_ref = dynamic_cast<sema::VarRef*>(unary.inner.get())) {
+            const auto ITER = vars_.back().find(v_ref->name);
+            if (ITER == vars_.back().end()) {
+                throw std::runtime_error("undefined var in IRGen: " + v_ref->name);
+            }
+            const Binding& bind = ITER->second;
+            if (const auto* ptr = std::get_if<LValue>(&bind)) {
+                return ptr->addr;
+            }
+            throw std::runtime_error("emitUnary(&): cannot take address of rvalue");
+        }
+        throw std::runtime_error("emitUnary(&): unsupported inner expr");
+    }
+    case K::DEREF: {
+        llvm::Value* inner = emitExpr(*unary.inner);
+        if (!inner->getType()->isPointerTy()) {
+            throw std::runtime_error("emitUnary(*): inner is not a pointer");
+        }
+        llvm::Type* elem_ty = toLlvmType(unary.type);
+        return builder_->CreateLoad(elem_ty, inner);
+    }
+    }
+    throw std::runtime_error("emitUnary: unsupported op");
 }
 
 llvm::Value* IrGenFromSema::emitBinOp(const sema::BinOp& bin) {
@@ -582,6 +629,11 @@ llvm::Value* IrGenFromSema::emitBinOp(const sema::BinOp& bin) {
 }
 
 llvm::Type* IrGenFromSema::toLlvmType(const TypeRef& t_ref) const {
+
+    if (t_ref.isPointer()) {
+        auto* pointee_ty = toLlvmType(t_ref.pointee());
+        return pointee_ty->getPointerTo();
+    }
     if (!t_ref.isBuiltin()) {
         throw std::runtime_error("toLlvmType: non-builtin");
     }
