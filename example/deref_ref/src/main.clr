@@ -1,0 +1,24 @@
+package main;
+
+[EntryPoint]
+func main() -> () {
+    let a: u8 = 5;
+    var b: u8 = 3;
+
+    let c: u8 = sum_via_ptr(a, b);
+    __cl_u8_printfn(c);        // expect: 8
+
+    let d: u8 = *(&a) + *(&b);
+    __cl_u8_printfn(d);        // expect: 8
+
+    // &(*p) check: *(&(*(&a))) == a
+    let e: u8 = *(&(*(&a))) + 1;
+    __cl_u8_printfn(e);        // expect: 6
+	
+	if (d is e) {
+	}
+}
+
+func sum_via_ptr(x: u8, y: u8) -> u8 {
+    return *(&x) + *(&y);
+}
