@@ -1,6 +1,7 @@
 #pragma once
 #include "ClearLanguageBaseVisitor.h"
 #include "ClearLanguageParser.h"
+#include "ParserRuleContext.h"
 #include "SemaIR.h"
 
 #include <memory>
@@ -48,13 +49,28 @@ class SemaBuilder : public ClearLanguageBaseVisitor {
     std::any visitBoolLiteral(ClearLanguageParser::BoolLiteralContext* ctx) override;
     std::any visitStmtExpr(ClearLanguageParser::StmtExprContext* ctx) override;
 
+    // Build phases
     void collectSignatures(ClearLanguageParser::StartContext* ctx);
     void constructTarget(ClearLanguageParser::StartContext* ctx);
+
+    // Error handling function
+    void setCurrentFile(const std::string& file_path) {
+        current_file_ = file_path;
+    }
+
+    [[nodiscard]] const std::string& currentFile() const noexcept {
+        return current_file_;
+    }
+
+    [[noreturn]] void throwErrorAt(antlr4::ParserRuleContext* ctx, const std::string& msg) const;
 
   private:
     std::string current_package_;
 
     std::unordered_map<std::string, std::string> imports_;
+
+    // Error context
+    std::string current_file_;
 
   public:
     enum class symbol_kind : std::uint8_t {

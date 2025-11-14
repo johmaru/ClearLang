@@ -87,7 +87,7 @@ void IrGenFromSema::emitEntryShim(const sema::Module& module) const {
     builder_->SetInsertPoint(b_blk);
 
     auto* arg = func->arg_begin();
-    llvm::Value* out = arg++;
+    llvm::Value* out = &*arg;
 
     auto store_tag = [&](const uint8_t TAG) {
         builder_->CreateStore(llvm::ConstantInt::get(i8_ty, TAG), out);
@@ -100,7 +100,7 @@ void IrGenFromSema::emitEntryShim(const sema::Module& module) const {
         builder_->CreateCall(entry, {});
         // unit -> tag=1, len=1
         store_tag(1);
-        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 1));
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 1)); // 1(tag) + 0 (data)
         return;
     }
     if (ret_ty->isIntegerTy(8)) {
@@ -151,7 +151,7 @@ void IrGenFromSema::emitEntryShim(const sema::Module& module) const {
         store_tag(7);
         auto* p32 = builder_->CreateBitCast(data_ptr, i32_ty->getPointerTo());
         builder_->CreateStore(bits, p32);
-        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 5));
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 5)); // 1(tag) + 4 (data)
         return;
     }
 
@@ -163,41 +163,41 @@ void IrGenFromSema::emitEntryShim(const sema::Module& module) const {
 
         value = builder_->CreateZExt(value, i8_ty);
         builder_->CreateStore(value, p_8);
-        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 2));
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 2)); // 1(tag) + 1 (data)
         return;
     }
 
     builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 0));
 }
 
-llvm::Function* IrGenFromSema::emitFunction(const sema::Function& f) {
+llvm::Function* IrGenFromSema::emitFunction(const sema::Function& func) {
     std::vector<llvm::Type*> param_tys;
-    param_tys.reserve(f.params.size());
-    for (const auto& param : f.params) {
+    param_tys.reserve(func.params.size());
+    for (const auto& param : func.params) {
         param_tys.push_back(toLlvmType(param.type));
     }
-    auto* ret_ty = toLlvmType(f.return_type);
+    auto* ret_ty = toLlvmType(func.return_type);
     auto* fn_ty = llvm::FunctionType::get(ret_ty, param_tys, false);
 
     // Reuse predeclared function if available
-    llvm::Function* func = mod_->getFunction(f.name);
-    if (func == nullptr) {
-        auto callee = mod_->getOrInsertFunction(f.name, fn_ty);
-        func = llvm::cast<llvm::Function>(callee.getCallee());
+    llvm::Function* llvm_func = mod_->getFunction(func.name);
+    if (llvm_func == nullptr) {
+        auto callee = mod_->getOrInsertFunction(func.name, fn_ty);
+        llvm_func = llvm::cast<llvm::Function>(callee.getCallee());
     }
 
     unsigned idx = 0;
-    for (auto& arg : func->args()) {
-        arg.setName(f.params[idx].name);
+    for (auto& arg : llvm_func->args()) {
+        arg.setName(func.params[idx].name);
         ++idx;
     }
 
-    auto* entry = llvm::BasicBlock::Create(ctx_, "entry", func);
+    auto* entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_func);
     builder_->SetInsertPoint(entry);
 
     vars_.emplace_back();
     idx = 0;
-    for (auto& arg : func->args()) {
+    for (auto& arg : llvm_func->args()) {
         llvm::Type* arg_ty = arg.getType();
         llvm::Function* parent_func = builder_->GetInsertBlock()->getParent();
         auto* addr = createAllocaInEntry(parent_func, arg_ty, arg.getName());
@@ -205,7 +205,7 @@ llvm::Function* IrGenFromSema::emitFunction(const sema::Function& f) {
         vars_.back()[std::string(arg.getName())] = LValue{addr};
         ++idx;
     }
-    emitBlock(*f.body);
+    emitBlock(*func.body);
 
     // Verification currently InsertBlock.
     llvm::BasicBlock* cur = builder_->GetInsertBlock();
@@ -220,7 +220,7 @@ llvm::Function* IrGenFromSema::emitFunction(const sema::Function& f) {
         }
     }
     vars_.pop_back();
-    return func;
+    return llvm_func;
 }
 
 void IrGenFromSema::emitBlock(const sema::Block& blk) {
