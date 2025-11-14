@@ -70,6 +70,16 @@ bool SemaBuilder::inferMutability(const std::shared_ptr<sema::Expr>& expr) {
     return ::inferMutability(expr);
 }
 
+sema::SourceLocation SemaBuilder::makeLocation(antlr4::ParserRuleContext* ctx) const {
+    sema::SourceLocation loc;
+    loc.file_path = current_file_;
+    if ((ctx != nullptr) && (ctx->getStart() != nullptr)) {
+        loc.line = ctx->getStart()->getLine();
+        loc.column = ctx->getStart()->getCharPositionInLine();
+    }
+    return loc;
+}
+
 SemaBuilder::SemaBuilder() : mod_(std::make_shared<sema::Module>()) {
     pushScope(scope_kind::GLOBAL);
     registerBuiltinTypes();
@@ -537,6 +547,7 @@ std::any SemaBuilder::visitIntLiteral(ClearLanguageParser::IntLiteralContext* ct
     NODE->type = TypeRef::builtinType(Type{Type::kind_enum::I32});
     int64_t int_value = std::stoll(ctx->INT()->getText());
     NODE->value = Value{NODE->type, int_value, true};
+    NODE->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(NODE);
 }
 
@@ -553,6 +564,7 @@ std::any SemaBuilder::visitFloatLiteral(ClearLanguageParser::FloatLiteralContext
     h_v.bits = BITS;
 
     NODE->value = Value{NODE->type, h_v, false};
+    NODE->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(NODE);
 }
 
@@ -563,6 +575,7 @@ std::any SemaBuilder::visitUnaryMinus(ClearLanguageParser::UnaryMinusContext* ct
     NODE->op = sema::UnaryOpKind::NEGATE;
     NODE->inner = INNER;
     NODE->type = INNER->type;
+    NODE->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(NODE);
 }
 
@@ -577,6 +590,7 @@ std::any SemaBuilder::visitUnaryRef(ClearLanguageParser::UnaryRefContext* ctx) {
 
     bool pointee_mut = inferMutability(INNER);
     node->type = TypeRef::pointerType(INNER->type, pointee_mut);
+    node->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(node);
 }
 
@@ -589,6 +603,7 @@ std::any SemaBuilder::visitUnaryDeref(ClearLanguageParser::UnaryDerefContext* ct
     node->op = sema::UnaryOpKind::DEREF;
     node->inner = INNER;
     node->type = INNER->type.pointee();
+    node->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(node);
 }
 
@@ -596,12 +611,14 @@ std::any SemaBuilder::visitOrExpr(ClearLanguageParser::OrExprContext* ctx) {
     auto cur = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->left));
 
     if (ctx->right.empty()) {
+        cur->loc = makeLocation(ctx);
         return cur;
     }
 
     if (!(cur->type.isBuiltin() && Type::isIntKind(cur->type.builtin.kind))) {
         throwErrorAt(ctx, "operator 'or' expects integer operands (left)");
     }
+    cur->loc = makeLocation(ctx);
 
     for (auto& aec : ctx->right) {
         const auto RHS = std::any_cast<std::shared_ptr<Expr>>(visit(aec));
@@ -609,13 +626,15 @@ std::any SemaBuilder::visitOrExpr(ClearLanguageParser::OrExprContext* ctx) {
             throwErrorAt(ctx, "operator or expects integer operands (right)");
         }
 
-        const auto NODE = std::make_shared<BinOp>();
-        NODE->op = "or";
-        NODE->lhs = cur;
-        NODE->rhs = RHS;
-        NODE->type = booleanType();
-        cur = NODE;
+        const auto BIN = std::make_shared<BinOp>();
+        BIN->op = "or";
+        BIN->lhs = cur;
+        BIN->rhs = RHS;
+        BIN->type = booleanType();
+        BIN->loc = makeLocation(ctx);
+        cur = BIN;
     }
+    cur->loc = makeLocation(ctx);
     return cur;
 }
 
@@ -623,12 +642,14 @@ std::any SemaBuilder::visitAndExpr(ClearLanguageParser::AndExprContext* ctx) {
     auto cur = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->left));
 
     if (ctx->right.empty()) {
+        cur->loc = makeLocation(ctx);
         return cur;
     }
 
     if (!(cur->type.isBuiltin() && Type::isIntKind(cur->type.builtin.kind))) {
         throwErrorAt(ctx, "operator 'and' expects integer operands (left)");
     }
+    cur->loc = makeLocation(ctx);
 
     for (auto& eec : ctx->right) {
         const auto RHS = std::any_cast<std::shared_ptr<Expr>>(visit(eec));
@@ -641,13 +662,17 @@ std::any SemaBuilder::visitAndExpr(ClearLanguageParser::AndExprContext* ctx) {
         NODE->lhs = cur;
         NODE->rhs = RHS;
         NODE->type = booleanType();
+        NODE->loc = makeLocation(ctx);
         cur = NODE;
     }
+    cur->loc = makeLocation(ctx);
     return cur;
 }
 
 std::any SemaBuilder::visitEqualExpr(ClearLanguageParser::EqualExprContext* ctx) {
     auto cur = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->left));
+
+    cur->loc = makeLocation(ctx);
 
     for (size_t i = 0; i < ctx->right.size(); i++) {
         const auto RHS = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->right[i]));
@@ -662,13 +687,15 @@ std::any SemaBuilder::visitEqualExpr(ClearLanguageParser::EqualExprContext* ctx)
             throwErrorAt(ctx, "type mismatch in equal op (only num same types)");
         }
 
-        const auto NODE = std::make_shared<BinOp>();
-        NODE->op = OPER;
-        NODE->lhs = cur;
-        NODE->rhs = RHS;
-        NODE->type = booleanType();
-        cur = NODE;
+        const auto BIN = std::make_shared<BinOp>();
+        BIN->op = OPER;
+        BIN->lhs = cur;
+        BIN->rhs = RHS;
+        BIN->type = booleanType();
+        BIN->loc = makeLocation(ctx);
+        cur = BIN;
     }
+    cur->loc = makeLocation(ctx);
     return cur;
 }
 
@@ -694,8 +721,10 @@ std::any SemaBuilder::visitAddExpr(ClearLanguageParser::AddExprContext* ctx) {
         BIN->lhs = cur;
         BIN->rhs = rhs;
         BIN->type = cur->type;
+        BIN->loc = makeLocation(ctx);
         cur = BIN;
     }
+    cur->loc = makeLocation(ctx);
     return cur;
 }
 
@@ -722,8 +751,10 @@ std::any SemaBuilder::visitMulExpr(ClearLanguageParser::MulExprContext* ctx) {
         BIN->lhs = cur;
         BIN->rhs = rhs;
         BIN->type = cur->type;
+        BIN->loc = makeLocation(ctx);
         cur = BIN;
     }
+    cur->loc = makeLocation(ctx);
     return cur;
 }
 
@@ -799,6 +830,7 @@ std::any SemaBuilder::visitVarRef(ClearLanguageParser::VarRefContext* ctx) {
         const auto V_REF = std::make_shared<VarRef>();
         V_REF->name = FQ_NAME;
         V_REF->type = fse->type;
+        V_REF->loc = makeLocation(ctx);
         return std::static_pointer_cast<Expr>(V_REF);
     }
     // NOLINTNEXTLINE(bugprone-empty-catch)
@@ -832,6 +864,7 @@ std::any SemaBuilder::visitBlock(ClearLanguageParser::BlockContext* ctx) {
             visit(stmt_ctx);
         }
     }
+    blk->loc = makeLocation(ctx);
     return blk;
 }
 
@@ -877,7 +910,7 @@ std::any SemaBuilder::visitIfBlock(ClearLanguageParser::IfBlockContext* ctx) {
         }
         node->else_blk = ELSE_BLK;
     }
-
+    node->loc = makeLocation(ctx);
     return node;
 }
 
@@ -945,7 +978,7 @@ std::any SemaBuilder::visitIfSingle(ClearLanguageParser::IfSingleContext* ctx) {
         }
         node->else_blk = ELSE_BLK;
     }
-
+    node->loc = makeLocation(ctx);
     return node;
 }
 
@@ -1016,6 +1049,7 @@ std::any SemaBuilder::visitStmtVarDecl(ClearLanguageParser::StmtVarDeclContext* 
     if (!insertSymbol(node->name, sym_entry)) {
         throwErrorAt(ctx, "redefinition in same scope: " + node->name);
     }
+    node->loc = makeLocation(ctx);
     return node;
 }
 
@@ -1137,12 +1171,14 @@ std::any SemaBuilder::visitStmtReturn(ClearLanguageParser::StmtReturnContext* ct
     if (ctx->expr() != nullptr) {
         node->value = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->expr()));
     }
+    node->loc = makeLocation(ctx);
     return node;
 }
 
 std::any SemaBuilder::visitStmtExpr(ClearLanguageParser::StmtExprContext* ctx) {
     auto node = std::make_shared<StmtExpr>();
     node->expr = std::any_cast<std::shared_ptr<Expr>>(visit(ctx->expr()));
+    node->loc = makeLocation(ctx);
     return node;
 }
 
@@ -1390,6 +1426,7 @@ std::any SemaBuilder::visitPostfixExpr(ClearLanguageParser::PostfixExprContext* 
             continue;
         }
     }
+    cur->loc = makeLocation(ctx);
     return cur;
 }
 
@@ -1401,6 +1438,7 @@ std::any SemaBuilder::visitUnitLiteral(ClearLanguageParser::UnitLiteralContext* 
     const auto LIT = std::make_shared<Literal>();
     LIT->type = TypeRef::builtinType(Type{Type::kind_enum::UNIT});
     LIT->value = Value{LIT->type, static_cast<int64_t>(0), false};
+    LIT->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(LIT);
 }
 
@@ -1455,6 +1493,7 @@ std::any SemaBuilder::visitStringLiteral(ClearLanguageParser::StringLiteralConte
     NODE->type = TypeRef::builtinType(Type{Type::kind_enum::STRING});
     const std::string RAW = ctx->STRING()->getText();
     NODE->value = makeString(unescapeStringToken(RAW));
+    NODE->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(NODE);
 }
 
@@ -1463,6 +1502,7 @@ std::any SemaBuilder::visitBoolLiteral(ClearLanguageParser::BoolLiteralContext* 
     NODE->type = booleanType();
     const bool IS_TRUE(ctx->TRUE() != nullptr);
     NODE->value = Value{NODE->type, static_cast<int64_t>(IS_TRUE ? 1 : 0), false};
+    NODE->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(NODE);
 }
 
@@ -1471,6 +1511,7 @@ std::any SemaBuilder::visitStringConstLiteral(ClearLanguageParser::StringConstLi
     NODE->type = TypeRef::builtinType(Type{Type::kind_enum::STRING});
     std::string raw = ctx->STRING()->getText();
     NODE->value = makeString(unescapeStringToken(raw));
+    NODE->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(NODE);
 }
 
@@ -1479,6 +1520,7 @@ std::any SemaBuilder::visitBoolConstLiteral(ClearLanguageParser::BoolConstLitera
     NODE->type = booleanType();
     const bool IS_TRUE(ctx->TRUE() != nullptr);
     NODE->value = Value{NODE->type, static_cast<int64_t>(IS_TRUE ? 1 : 0), false};
+    NODE->loc = makeLocation(ctx);
     return std::static_pointer_cast<Expr>(NODE);
 }
 

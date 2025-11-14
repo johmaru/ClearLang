@@ -21,6 +21,12 @@ struct Node {
     virtual ~Node() = default;
 };
 
+// For a error reporting
+struct SourceLocation {
+    std::string file_path;
+    size_t line{0U};
+    size_t column{0U};
+};
 struct Expr : Node {
     Expr(const Expr&) = default;
     Expr(Expr&&) = delete;
@@ -28,6 +34,7 @@ struct Expr : Node {
     Expr& operator=(const Expr&) = default;
     Expr& operator=(Expr&&) = delete;
     TypeRef type;
+    SourceLocation loc;
     [[nodiscard]] virtual bool isConst() const {
         return false;
     }
@@ -83,7 +90,9 @@ struct Call : Expr {
     std::vector<std::shared_ptr<Expr>> args;
 };
 
-struct Stmt : Node {};
+struct Stmt : Node {
+    SourceLocation loc;
+};
 struct StmtVarDecl : Stmt {
     std::string name;
     TypeRef decl_type;

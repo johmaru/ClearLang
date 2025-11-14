@@ -64,6 +64,8 @@ class SemaBuilder : public ClearLanguageBaseVisitor {
 
     [[noreturn]] void throwErrorAt(antlr4::ParserRuleContext* ctx, const std::string& msg) const;
 
+    [[nodiscard]] sema::SourceLocation makeLocation(antlr4::ParserRuleContext* ctx) const;
+
   private:
     std::string current_package_;
 
