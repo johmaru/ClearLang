@@ -1,4 +1,5 @@
 #pragma once
+#include "../error/ErrUtils.h"
 #include "../sema/SemaIR.h"
 
 #include "llvm/IR/Instructions.h"
@@ -45,4 +46,20 @@ class IrGenFromSema {
     std::unique_ptr<llvm::Module> mod_;
     std::unique_ptr<llvm::IRBuilder<>> builder_;
     std::vector<std::unordered_map<std::string, Binding>> vars_;
+
+    [[noreturn]] static void throwIrError(const sema::SourceLocation& loc, const std::string& msg) {
+        ClearException::MessageArgs args;
+        args.file_path = loc.file_path;
+        args.line = loc.line;
+        args.column = loc.column;
+        throw ClearException(msg, args);
+    }
+
+    [[noreturn]] static void throwIrError(const sema::Expr& expr, const std::string& msg) {
+        throwIrError(expr.loc, msg);
+    }
+
+    [[noreturn]] static void throwIrError(const sema::Stmt& stmt, const std::string& msg) {
+        throwIrError(stmt.loc, msg);
+    }
 };

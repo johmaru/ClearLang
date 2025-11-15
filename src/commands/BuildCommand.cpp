@@ -1,5 +1,6 @@
 #include "BuildCommand.h"
 
+#include "../error/ErrUtils.h"
 #include "../llvm/Executer.h"
 #include "../sema/SemaBuilder.h"
 #include "ClearLanguageLexer.h"
@@ -19,6 +20,7 @@
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/TargetParser/Host.h>
 #include <system_error>
+
 
 #ifdef HAVE_LLD
 #include <lld/Common/Driver.h> // lldMain, DriverDef
@@ -110,10 +112,10 @@ static void linkWithLld(const std::string& obj_path, const std::string& out_path
     argv.push_back(add(obj_path));
 
 #if defined(_DEBUG)
-    argv.push_back("msvcrtd.lib");    // mainCRTStartup 等
-    argv.push_back("vcruntimed.lib"); // _calloc_dbg 等
+    argv.push_back("msvcrtd.lib");
+    argv.push_back("vcruntimed.lib");
     argv.push_back("ucrtd.lib");
-    argv.push_back("msvcprtd.lib"); // C++ STL debug
+    argv.push_back("msvcprtd.lib");
 #else
     argv.push_back("msvcrt.lib");
     argv.push_back("vcruntime.lib");
@@ -282,95 +284,111 @@ static void linkWithSystemLinker(const std::string& obj_path, const std::string&
 }
 #endif
 void BuildCommand::executeBuild(bool debug) const {
-    std::cout << "Execute build from : " << entry_point_ << "\n";
+    try {
+        std::cout << "Execute build from : " << entry_point_ << "\n";
 
-    auto sources = collectSourceFiles(source_root_);
-    if (sources.empty()) {
-        throw std::runtime_error("no source files found :" + source_root_);
-    }
-
-    SemaBuilder builder;
-
-    // Phase1
-    for (const auto& path : sources) {
-        std::ifstream ifs(path);
-        if (!ifs.is_open()) {
-            throw std::runtime_error("Can not opened file : " + path);
+        auto sources = collectSourceFiles(source_root_);
+        if (sources.empty()) {
+            throw std::runtime_error("no source files found :" + source_root_);
         }
 
-        antlr4::ANTLRInputStream input(ifs);
-        ClearLanguageLexer lexer(&input);
-        antlr4::CommonTokenStream tokens(&lexer);
-        ClearLanguageParser parser(&tokens);
-        auto* tree = parser.start();
+        SemaBuilder builder;
 
-        builder.collectSignatures(tree);
-    }
-
-    // Phase2
-    for (const auto& path : sources) {
-        std::ifstream ifs(path);
-        if (!ifs.is_open()) {
-            throw std::runtime_error("Can not opened file : " + path);
-        }
-
-        antlr4::ANTLRInputStream input(ifs);
-        ClearLanguageLexer lexer(&input);
-        antlr4::CommonTokenStream tokens(&lexer);
-        ClearLanguageParser parser(&tokens);
-        auto* tree = parser.start();
-
-        builder.constructTarget(tree);
-    }
-
-    auto mod = builder.takeModule();
-
-    if (!entry_point_.empty()) {
-        mod->entry_name = entry_point_;
-    }
-
-    if (mod->entry_name.empty()) {
-        throw std::runtime_error("entry point not resolved");
-    }
-
-    auto ctx = std::make_unique<llvm::LLVMContext>();
-    IrGenFromSema ir(*ctx, "ClearModule");
-    ir.emitModule(*mod);
-
-    if (debug) {
-        supportExecuteDebug(ir, ctx);
-        return;
-    }
-
-    // ---- AOT: IR -> .obj -> exe/dll ----
-    namespace fs = std::filesystem;
-    fs::create_directories(output_path_);
-    const std::string BASE = app_name_;
-    const auto OUT_DIR = fs::path(output_path_);
-    const fs::path OBJ_PATH = OUT_DIR / (BASE + ".obj");
-    const bool AS_DLL = (kind_ == build_kind::DLL);
-    const fs::path OUT_PATH = OUT_DIR / (BASE + (AS_DLL ? ".dll" : ".exe"));
-    const fs::path IR_PATH = OUT_DIR / (BASE + ".ll");
-
-    {
-        auto& m = ir.module();
-        {
-            std::error_code ec;
-            llvm::raw_fd_ostream ir_out(IR_PATH.string(), ec, llvm::sys::fs::OF_Text);
-            if (!ec) {
-                m.print(ir_out, nullptr);
-            } else {
-                llvm::errs() << "failed to write IR file: " << ec.message() << "\n";
+        // Phase1
+        for (const auto& path : sources) {
+            std::ifstream ifs(path);
+            if (!ifs.is_open()) {
+                throw std::runtime_error("Can not opened file : " + path);
             }
+
+            antlr4::ANTLRInputStream input(ifs);
+            ClearLanguageLexer lexer(&input);
+            antlr4::CommonTokenStream tokens(&lexer);
+            ClearLanguageParser parser(&tokens);
+            auto* tree = parser.start();
+
+            builder.collectSignatures(tree);
         }
-        emitObjectFile(m, OBJ_PATH.string());
-    }
+
+        // Phase2
+        for (const auto& path : sources) {
+            std::ifstream ifs(path);
+            if (!ifs.is_open()) {
+                throw std::runtime_error("Can not opened file : " + path);
+            }
+
+            antlr4::ANTLRInputStream input(ifs);
+            ClearLanguageLexer lexer(&input);
+            antlr4::CommonTokenStream tokens(&lexer);
+            ClearLanguageParser parser(&tokens);
+            auto* tree = parser.start();
+
+            builder.constructTarget(tree);
+        }
+
+        auto mod = builder.takeModule();
+
+        if (!entry_point_.empty()) {
+            mod->entry_name = entry_point_;
+        }
+
+        if (mod->entry_name.empty()) {
+            throw std::runtime_error("entry point not resolved");
+        }
+
+        auto ctx = std::make_unique<llvm::LLVMContext>();
+        IrGenFromSema ir(*ctx, "ClearModule");
+        ir.emitModule(*mod);
+
+        if (debug) {
+            supportExecuteDebug(ir, ctx);
+            return;
+        }
+
+        // ---- AOT: IR -> .obj -> exe/dll ----
+        namespace fs = std::filesystem;
+        fs::create_directories(output_path_);
+        const std::string BASE = app_name_;
+        const auto OUT_DIR = fs::path(output_path_);
+        const fs::path OBJ_PATH = OUT_DIR / (BASE + ".obj");
+        const bool AS_DLL = (kind_ == build_kind::DLL);
+        const fs::path OUT_PATH = OUT_DIR / (BASE + (AS_DLL ? ".dll" : ".exe"));
+        const fs::path IR_PATH = OUT_DIR / (BASE + ".ll");
+
+        {
+            auto& m = ir.module();
+            {
+                std::error_code ec;
+                llvm::raw_fd_ostream ir_out(IR_PATH.string(), ec, llvm::sys::fs::OF_Text);
+                if (!ec) {
+                    m.print(ir_out, nullptr);
+                } else {
+                    llvm::errs() << "failed to write IR file: " << ec.message() << "\n";
+                }
+            }
+            emitObjectFile(m, OBJ_PATH.string());
+        }
 
 #ifdef HAVE_LLD
-    linkWithLld(OBJ_PATH.string(), OUT_PATH.string(), AS_DLL);
+        linkWithLld(OBJ_PATH.string(), OUT_PATH.string(), AS_DLL);
 #else
-    linkWithSystemLinker(OBJ_PATH.string(), OUT_PATH.string(), AS_DLL);
+        linkWithSystemLinker(OBJ_PATH.string(), OUT_PATH.string(), AS_DLL);
 #endif
 
-    std::cout << "Built: " << OUT_PATH.string() << "\n";
+        std::cout << "Built: " << OUT_PATH.string() << "\n";
+    } catch (const ClearException& exception) {
+        std::cerr << "Semantic error\n";
+        if (!exception.filePath().empty()) {
+            std::cerr << "  file : " << exception.filePath() << "\n";
+        }
+        if (exception.line() > 0) {
+            std::cerr << "  line : " << exception.line() << ", column : " << exception.column()
+                      << "\n";
+        }
+        std::cerr << "  message : " << exception.what() << "\n";
+        std::exit(EXIT_FAILURE);
+    } catch (const std::exception& exception) {
+        std::cerr << "Build failed: " << exception.what() << "\n";
+        std::exit(EXIT_FAILURE);
+    }
 }

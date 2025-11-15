@@ -87,7 +87,7 @@ void IrGenFromSema::emitEntryShim(const sema::Module& module) const {
     builder_->SetInsertPoint(b_blk);
 
     auto* arg = func->arg_begin();
-    llvm::Value* out = arg++;
+    llvm::Value* out = &*arg;
 
     auto store_tag = [&](const uint8_t TAG) {
         builder_->CreateStore(llvm::ConstantInt::get(i8_ty, TAG), out);
@@ -100,7 +100,7 @@ void IrGenFromSema::emitEntryShim(const sema::Module& module) const {
         builder_->CreateCall(entry, {});
         // unit -> tag=1, len=1
         store_tag(1);
-        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 1));
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 1)); // 1(tag) + 0 (data)
         return;
     }
     if (ret_ty->isIntegerTy(8)) {
@@ -151,7 +151,7 @@ void IrGenFromSema::emitEntryShim(const sema::Module& module) const {
         store_tag(7);
         auto* p32 = builder_->CreateBitCast(data_ptr, i32_ty->getPointerTo());
         builder_->CreateStore(bits, p32);
-        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 5));
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 5)); // 1(tag) + 4 (data)
         return;
     }
 
@@ -163,41 +163,41 @@ void IrGenFromSema::emitEntryShim(const sema::Module& module) const {
 
         value = builder_->CreateZExt(value, i8_ty);
         builder_->CreateStore(value, p_8);
-        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 2));
+        builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 2)); // 1(tag) + 1 (data)
         return;
     }
 
     builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 0));
 }
 
-llvm::Function* IrGenFromSema::emitFunction(const sema::Function& f) {
+llvm::Function* IrGenFromSema::emitFunction(const sema::Function& func) {
     std::vector<llvm::Type*> param_tys;
-    param_tys.reserve(f.params.size());
-    for (const auto& param : f.params) {
+    param_tys.reserve(func.params.size());
+    for (const auto& param : func.params) {
         param_tys.push_back(toLlvmType(param.type));
     }
-    auto* ret_ty = toLlvmType(f.return_type);
+    auto* ret_ty = toLlvmType(func.return_type);
     auto* fn_ty = llvm::FunctionType::get(ret_ty, param_tys, false);
 
     // Reuse predeclared function if available
-    llvm::Function* func = mod_->getFunction(f.name);
-    if (func == nullptr) {
-        auto callee = mod_->getOrInsertFunction(f.name, fn_ty);
-        func = llvm::cast<llvm::Function>(callee.getCallee());
+    llvm::Function* llvm_func = mod_->getFunction(func.name);
+    if (llvm_func == nullptr) {
+        auto callee = mod_->getOrInsertFunction(func.name, fn_ty);
+        llvm_func = llvm::cast<llvm::Function>(callee.getCallee());
     }
 
     unsigned idx = 0;
-    for (auto& arg : func->args()) {
-        arg.setName(f.params[idx].name);
+    for (auto& arg : llvm_func->args()) {
+        arg.setName(func.params[idx].name);
         ++idx;
     }
 
-    auto* entry = llvm::BasicBlock::Create(ctx_, "entry", func);
+    auto* entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_func);
     builder_->SetInsertPoint(entry);
 
     vars_.emplace_back();
     idx = 0;
-    for (auto& arg : func->args()) {
+    for (auto& arg : llvm_func->args()) {
         llvm::Type* arg_ty = arg.getType();
         llvm::Function* parent_func = builder_->GetInsertBlock()->getParent();
         auto* addr = createAllocaInEntry(parent_func, arg_ty, arg.getName());
@@ -205,7 +205,7 @@ llvm::Function* IrGenFromSema::emitFunction(const sema::Function& f) {
         vars_.back()[std::string(arg.getName())] = LValue{addr};
         ++idx;
     }
-    emitBlock(*f.body);
+    emitBlock(*func.body);
 
     // Verification currently InsertBlock.
     llvm::BasicBlock* cur = builder_->GetInsertBlock();
@@ -216,11 +216,11 @@ llvm::Function* IrGenFromSema::emitFunction(const sema::Function& f) {
         } else if (ret_ty->isVoidTy()) {
             builder_->CreateRetVoid();
         } else {
-            throw std::runtime_error("missing return");
+            throwIrError(*func.body, "missing return");
         }
     }
     vars_.pop_back();
-    return func;
+    return llvm_func;
 }
 
 void IrGenFromSema::emitBlock(const sema::Block& blk) {
@@ -287,7 +287,7 @@ void IrGenFromSema::emitStmt(const sema::Stmt& stmt) {
                 cond_v,
                 llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(cond_v->getType())));
         } else {
-            throw std::runtime_error("if condition: unsupported type");
+            throwIrError(*sif, "if condition: unsupported type");
         }
 
         llvm::Function* func = builder_->GetInsertBlock()->getParent();
@@ -331,7 +331,7 @@ llvm::Value* IrGenFromSema::emitExpr(const sema::Expr& expr) {
     if (const auto* v_ref = dynamic_cast<const sema::VarRef*>(&expr)) {
         const auto ITER = vars_.back().find(v_ref->name);
         if (ITER == vars_.back().end()) {
-            throw std::runtime_error("undefined var in IRGen: " + v_ref->name);
+            throwIrError(*v_ref, "undefined var in IRGen: " + v_ref->name);
         }
         const Binding& bind = ITER->second;
         if (const auto* ptr = std::get_if<RValue>(&bind)) {
@@ -376,14 +376,14 @@ llvm::Value* IrGenFromSema::emitExpr(const sema::Expr& expr) {
             }
 
             if (call->args.size() != 1) {
-                throw std::runtime_error(FN_NAME + " expected 1 args");
+                throwIrError(*call, FN_NAME + " expected 1 args");
             }
             llvm::Value* arg0 = emitExpr(*call->args[0]);
             if (arg0->getType()->isHalfTy()) {
                 arg0 = builder_->CreateFPExt(arg0, float_ty, "h2f");
             } else if (arg0->getType()->isFloatTy()) {
             } else {
-                throw std::runtime_error(FN_NAME + ": doesn't support other then float type");
+                throwIrError(*call, FN_NAME + ": doesn't support other then float type");
             }
 
             return builder_->CreateCall(callee, {arg0});
@@ -414,7 +414,7 @@ llvm::Value* IrGenFromSema::emitExpr(const sema::Expr& expr) {
         const TypeRef& dst = cast->target_type;
 
         if (!src.isBuiltin() || !dst.isBuiltin()) {
-            throw std::runtime_error("emitCast: non-builtin types are not supported");
+            throwIrError(*cast, "emitCast: non-builtin types are not supported");
         }
 
         if (src.builtin.kind == dst.builtin.kind) {
@@ -446,7 +446,7 @@ llvm::Value* IrGenFromSema::emitExpr(const sema::Expr& expr) {
 
         if (is_int_kind(src.builtin.kind) && dst.builtin.kind == Type::kind_enum::F16) {
             if (!val->getType()->isIntegerTy() || !dst_ty->isHalfTy()) {
-                throw std::runtime_error("emitCast(int<->f16): type mismatch");
+                throwIrError(*cast, "emitCast(int<->f16): type mismatch");
             }
 
             return src.builtin.isUnsigned() ? builder_->CreateUIToFP(val, dst_ty)
@@ -455,7 +455,7 @@ llvm::Value* IrGenFromSema::emitExpr(const sema::Expr& expr) {
 
         if (src.builtin.kind == Type::kind_enum::F16 && is_int_kind(dst.builtin.kind)) {
             if (!val->getType()->isHalfTy() || !dst_ty->isIntegerTy()) {
-                throw std::runtime_error("emitCast(f16->int): type mismatch");
+                throwIrError(*cast, "emitCast(f16->int): type mismatch");
             }
             return dst.builtin.isUnsigned() ? builder_->CreateFPToUI(val, dst_ty)
                                             : builder_->CreateFPToSI(val, dst_ty);
@@ -463,7 +463,7 @@ llvm::Value* IrGenFromSema::emitExpr(const sema::Expr& expr) {
 
         if (is_int_kind(src.builtin.kind) && dst.builtin.kind == Type::kind_enum::F32) {
             if (!val->getType()->isIntegerTy() || !dst_ty->isFloatTy()) {
-                throw std::runtime_error("emitCast (int<->f32): type mismatch");
+                throwIrError(*cast, "emitCast (int<->f32): type mismatch");
             }
 
             return src.builtin.isUnsigned() ? builder_->CreateUIToFP(val, dst_ty)
@@ -472,15 +472,15 @@ llvm::Value* IrGenFromSema::emitExpr(const sema::Expr& expr) {
 
         if (src.builtin.kind == Type::kind_enum::F32 && is_int_kind(dst.builtin.kind)) {
             if (!val->getType()->isFloatTy() || !dst_ty->isIntegerTy()) {
-                throw std::runtime_error("emitCast(f32->int): type mismatch");
+                throwIrError(*cast, "emitCast(f32->int): type mismatch");
             }
             return dst.builtin.isUnsigned() ? builder_->CreateFPToUI(val, dst_ty)
                                             : builder_->CreateFPToSI(val, dst_ty);
         }
 
-        throw std::runtime_error("emitCast: unsupported cast");
+        throwIrError(*cast, "emitCast: unsupported cast");
     }
-    throw std::runtime_error("emitExpr: unsupported node");
+    throwIrError(*&expr, "emitExpr: unsupported node");
 }
 
 llvm::Value* IrGenFromSema::emitUnary(const sema::Unary& unary) {
@@ -508,26 +508,26 @@ llvm::Value* IrGenFromSema::emitUnary(const sema::Unary& unary) {
         if (const auto* v_ref = dynamic_cast<sema::VarRef*>(unary.inner.get())) {
             const auto ITER = vars_.back().find(v_ref->name);
             if (ITER == vars_.back().end()) {
-                throw std::runtime_error("undefined var in IRGen: " + v_ref->name);
+                throwIrError(*v_ref, "undefined var in IRGen: " + v_ref->name);
             }
             const Binding& bind = ITER->second;
             if (const auto* ptr = std::get_if<LValue>(&bind)) {
                 return ptr->addr;
             }
-            throw std::runtime_error("emitUnary(&): cannot take address of rvalue");
+            throwIrError(*unary.inner, "emitUnary(&): cannot take address of rvalue");
         }
-        throw std::runtime_error("emitUnary(&): unsupported inner expr");
+        throwIrError(*unary.inner, "emitUnary(&): unsupported inner expr");
     }
     case K::DEREF: {
         llvm::Value* inner = emitExpr(*unary.inner);
         if (!inner->getType()->isPointerTy()) {
-            throw std::runtime_error("emitUnary(*): inner is not a pointer");
+            throwIrError(*unary.inner, "emitUnary(*): inner is not a pointer");
         }
         llvm::Type* elem_ty = toLlvmType(unary.type);
         return builder_->CreateLoad(elem_ty, inner);
     }
     }
-    throw std::runtime_error("emitUnary: unsupported op");
+    throwIrError(*unary.inner, "emitUnary: unsupported op");
 }
 
 llvm::Value* IrGenFromSema::emitBinOp(const sema::BinOp& bin) {
@@ -544,7 +544,7 @@ llvm::Value* IrGenFromSema::emitBinOp(const sema::BinOp& bin) {
             cmp = (bin.op == "is") ? builder_->CreateFCmpOEQ(lhs, rhs)
                                    : builder_->CreateFCmpONE(lhs, rhs);
         } else {
-            throw std::runtime_error("emitBinOp: unsupported type for equal");
+            throwIrError(bin, "emitBinOp: unsupported type for equal");
         }
 
         return cmp;
@@ -567,7 +567,7 @@ llvm::Value* IrGenFromSema::emitBinOp(const sema::BinOp& bin) {
                     val,
                     llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(val->getType())));
             }
-            throw std::runtime_error("emitBinOp(and|or): cannot coerce operand to i1");
+            throwIrError(bin, "emitBinOp(and|or): cannot coerce operand to i1");
         };
         llvm::Value* lhs_i1 = to_i1(lhs);
         llvm::Value* rhs_i1 = to_i1(rhs);
@@ -613,7 +613,7 @@ llvm::Value* IrGenFromSema::emitBinOp(const sema::BinOp& bin) {
                bin.lhs->type.builtin.kind == Type::kind_enum::STRING &&
                bin.rhs->type.builtin.kind == Type::kind_enum::STRING) {
         if (bin.op != "+") {
-            throw std::runtime_error("emitBinOp: unsupported string op (only +)");
+            throwIrError(bin, "emitBinOp: unsupported string op (only +)");
         }
 
         auto* i8_ptr = llvm::Type::getInt8Ty(ctx_)->getPointerTo();
@@ -625,7 +625,7 @@ llvm::Value* IrGenFromSema::emitBinOp(const sema::BinOp& bin) {
         }
         return builder_->CreateCall(func, {lhs, rhs});
     }
-    throw std::runtime_error("emitBinOp: unsupported op/type");
+    throwIrError(bin, "emitBinOp: unsupported op/type");
 }
 
 llvm::Type* IrGenFromSema::toLlvmType(const TypeRef& t_ref) const {
